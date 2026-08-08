@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: {% raw %}${{ github.workflow }}-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+{% if use_precommit %}
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e repo-checks
+
+{% endif %}
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e lock
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e lint
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+{% for python_version in python_versions %}
+          - python-version: "{{ python_version }}"
+            tox-env: "py{{ python_version | replace('.', '') }}"
+{% endfor %}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: {% raw %}${{ matrix.python-version }}{% endraw %}
+      - run: uvx --with tox-uv tox run -e {% raw %}${{ matrix.tox-env }}{% endraw %}
+      - name: Upload test reports
+        if: {% raw %}${{ always() }}{% endraw %}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-py{% raw %}${{ matrix.python-version }}{% endraw %}
+          path: |
+            reports/pytest/
+            reports/coverage/
+          if-no-files-found: error
+
+{% if use_notebooks %}
+  notebooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e notebooks
+
+{% endif %}
+{% if project_kind == "data_science" and use_dvc %}
+  dvc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e dvc
+
+{% endif %}
+{% if use_docs %}
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+
+      - run: uvx --with tox-uv tox run -e docs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: documentation
+          path: reports/sphinx/
+          if-no-files-found: error
+
+{% endif %}
+  package-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "{{ minimum_python_version }}"
+      - run: uvx --with tox-uv tox run -e package-check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: distributions
+          path: dist/

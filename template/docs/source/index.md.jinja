@@ -1,0 +1,21 @@
+# {{ project_name }}
+
+{{ project_description }}
+
+```{toctree}
+:maxdepth: 2
+:caption: Contents
+
+readme
+command-reference
+api
+{% if use_example_gallery %}auto_examples/index{% endif %}
+{% if use_notebooks %}notebooks/index{% endif %}
+{% if use_uml %}diagrams/index{% endif %}
+```
+
+## Indices
+
+- {ref}`genindex`
+- {ref}`modindex`
+- {ref}`search`

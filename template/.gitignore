@@ -1,0 +1,43 @@
+# Environments and caches
+.venv/
+.tox/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-of-*/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Test and documentation output
+.coverage
+.coverage.*
+coverage.xml
+reports/coverage/
+reports/pytest/
+reports/sphinx/
+docs/_build/
+docs/source/_autosummary/
+docs/source/auto_examples/
+docs/source/sg_execution_times.rst
+docs/source/diagrams/*.mmd
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# IDEs
+.idea/
+
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Copier conflicts
+*.rej

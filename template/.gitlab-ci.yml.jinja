@@ -1,0 +1,114 @@
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
+default:
+  interruptible: true
+
+stages:
+{% if use_precommit %}
+  - repository
+{% endif %}
+  - lock
+  - lint
+  - test
+  - checks
+  - build
+
+variables:
+  GIT_DEPTH: "0"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+renovate:
+  stage: build
+  image: node:lts
+  script:
+    - npx --yes renovate --autodiscover --onboarding-branch=renovate/init
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+.uv-job:
+  before_script:
+    - python -m pip install uv
+  cache:
+    key: "uv-$CI_JOB_IMAGE"
+    paths:
+      - .uv-cache/
+
+{% if use_precommit -%}
+repo-checks:
+  extends: .uv-job
+  stage: repository
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e repo-checks
+
+{% endif -%}
+lock:
+  extends: .uv-job
+  stage: lock
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e lock
+
+lint:
+  extends: .uv-job
+  stage: lint
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e lint
+
+{% for python_version in python_versions -%}
+test:py{{ python_version | replace('.', '') }}:
+  extends: .uv-job
+  stage: test
+  image: "python:{{ python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e py{{ python_version | replace('.', '') }}
+  artifacts:
+    when: always
+    paths:
+      - reports/
+
+{% endfor -%}
+{% if use_notebooks -%}
+notebooks:
+  extends: .uv-job
+  stage: checks
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e notebooks
+
+{% endif -%}
+{% if project_kind == "data_science" and use_dvc -%}
+dvc:
+  extends: .uv-job
+  stage: checks
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e dvc
+
+{% endif -%}
+{% if use_docs -%}
+docs:
+  extends: .uv-job
+  stage: checks
+  image: "python:{{ minimum_python_version }}-slim"
+
+  script:
+    - uvx --with tox-uv tox run -e docs
+  artifacts:
+    paths:
+      - reports/sphinx/
+
+{% endif -%}
+package-check:
+  extends: .uv-job
+  stage: build
+  image: "python:{{ minimum_python_version }}-slim"
+  script:
+    - uvx --with tox-uv tox run -e package-check
+  artifacts:
+    paths:
+      - dist/

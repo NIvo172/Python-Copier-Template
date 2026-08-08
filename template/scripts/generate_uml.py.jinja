@@ -1,0 +1,29 @@
+"""Generate Pyreverse Mermaid diagrams."""
+
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "docs" / "source" / "diagrams"
+
+
+def main() -> None:
+    """Generate package and class diagrams."""
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "pyreverse",
+            "--colorized",
+            "--output",
+            "mmd",
+            "--output-directory",
+            str(OUTPUT),
+            "{{ package_name }}",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

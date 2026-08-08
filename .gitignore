@@ -1,0 +1,10 @@
+.venv/
+.ruff_cache/
+.pytest_cache/
+/pytest-of-root/
+/copier._vcs.clone.*/
+__pycache__/
+*.py[cod]
+.generated/
+dist/
+reports/sphinx/

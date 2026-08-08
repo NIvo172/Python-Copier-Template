@@ -1,0 +1,32 @@
+"""Small example API for {{ project_name }}."""
+
+
+def hello(name: str = "World") -> str:
+    """Return a greeting.
+{% if docstring_style == "google" %}
+    Args:
+        name: Name to greet.
+
+    Returns:
+        A greeting string.
+{% else %}
+    Parameters
+    ----------
+    name : str, default="World"
+        Name to greet.
+
+    Returns
+    -------
+    str
+        A greeting string.
+{% endif %}    """
+    return f"Hello, {name}!"
+
+
+def main() -> None:
+    """Run the example command-line entry point."""
+    print(hello())
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,250 @@
+# Contributing to {{ project_name }}
+
+This guide is for developers working in an established repository. Initial repository creation, Git tagging, and Copier updates are maintainer operations documented in `MAINTAINING.md`.
+
+## Requirements
+
+- Python {{ minimum_python_version }} or newer
+- [`uv`](https://docs.astral.sh/uv/)
+- Git
+
+The full test matrix represents Python {% for python_version in python_versions %}{{ python_version }}{% if not loop.last %}, {% endif %}{% endfor %}. The default suite uses Python {{ minimum_python_version }}.
+
+## Set up a checkout
+
+Synchronise exactly the committed dependency state:
+
+```bash
+uv sync --locked
+```
+
+`pyproject.toml` declares dependencies and `uv.lock` records the resolved environment. `--locked` fails when those files disagree instead of changing the lock.
+
+{% if use_precommit -%}
+Install the Git hook:
+
+```bash
+uv run pre-commit install
+```
+
+The hook applies repository checks, docstring formatting, and Ruff fixes before a commit.
+{% endif -%}
+If `uv.lock` is absent because the project was just rendered, stop and follow the one-time bootstrap in `MAINTAINING.md`.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/{{ package_name }}/` | Installable typed package |
+| `tests/` | Behavioural tests and fixtures |
+| `scripts/` | Portable task implementations used by Tox |
+| `pyproject.toml` | Package metadata, dependencies, and Python-tool policy |
+| `uv.lock` | Resolved dependency state |
+| `tox.ini` | Supported validation-task interface |
+{% if project_kind == "data_science" %}| `configs/` | Versioned experiment/model configuration |
+| `data/` | External, raw, interim, and processed data boundaries |
+| `models/` | Model artefacts or model metadata |
+| `references/` | Data dictionaries and supporting references |
+| `reports/` | Figures and generated analysis output |
+{% endif %}{% if use_notebooks %}| `notebooks/` | Exploratory notebooks subject to output hygiene checks |
+{% endif %}{% if use_docs %}| `docs/` | Sphinx source and documentation-author guide |
+{% endif %}
+## Change dependencies
+
+Runtime dependencies:
+
+```bash
+uv add <package>
+uv remove <package>
+```
+
+Development-only dependencies belong in the group that consumes them:
+
+```bash
+uv add --group test <package>
+uv add --group lint <package>
+{% if use_docs -%}
+uv add --group docs <package>
+{% endif -%}
+{% if use_notebooks -%}
+uv add --group notebooks <package>
+{% endif -%}
+{% if project_kind == "data_science" and use_dvc -%}
+uv add --group dvc <package>
+{% endif -%}
+```
+
+After editing dependency declarations:
+
+```bash
+uv lock
+uv sync
+uv run --locked tox run -e lock
+```
+
+Commit `pyproject.toml` and `uv.lock` together.
+
+## Run validation
+
+Tox is the preferred project-level task interface used locally and in CI.
+
+| Task | Preferred Tox command | Direct command |
+| --- | --- | --- |
+| Default configured suite | `uv run --locked tox` | Run each applicable command below |
+{% if use_precommit %}| Every pre-commit hook | `uv run --locked tox run -e pre-commit` | `uv run --locked --group lint pre-commit run --all-files --show-diff-on-failure` |
+| CI repository hygiene | `uv run --locked tox run -e repo-checks` | `uv run --locked --group lint pre-commit run --hook-stage manual --all-files --show-diff-on-failure` |
+{% endif %}| Lock consistency | `uv run --locked tox run -e lock` | `uv lock --check` |
+| Static validation | `uv run --locked tox run -e lint` | `uv run --locked --group lint ruff check .`<br>`uv run --locked --group lint ruff format --check .`<br>`uv run --locked --group lint mypy src tests scripts` |
+| Tests on Python {{ minimum_python_version }} | `uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }}` | `uv run --locked --group test pytest` |
+| Complete Python matrix | `uv run --locked tox run -m test` | Run pytest with every selected interpreter |
+{% if use_notebooks %}| Notebook validation | `uv run --locked tox run -e notebooks` | `uv run --locked --group lint python scripts/check_notebooks.py` |
+{% endif %}{% if project_kind == "data_science" and use_dvc %}| DVC state | `uv run --locked tox run -e dvc` | `uv run --locked --group dvc dvc status` |
+{% endif %}{% if use_docs and use_uml %}| UML generation | `uv run --locked tox run -e uml` | `uv run --locked --group docs python scripts/generate_uml.py` |
+{% endif %}{% if use_docs %}| Complete documentation | `uv run --locked tox run -e docs` | `uv run --locked --group docs python scripts/build_docs.py all` |
+| HTML documentation | `uv run --locked tox run -e docs -- html` | `uv run --locked --group docs python scripts/build_docs.py html` |
+| API documentation coverage | `uv run --locked tox run -e docs -- coverage` | `uv run --locked --group docs python scripts/build_docs.py coverage` |
+| Clean documentation output | `uv run --locked tox run -e docs -- clean` | `uv run --locked --group docs python scripts/build_docs.py clean` |
+{% endif %}| Distribution validation | `uv run --locked tox run -e package-check` | `uv run --locked --group package-check python scripts/check_package.py` |
+| Build distributions | `uv run --locked tox run -e build` | `uv build` |
+| Clean generated output | `uv run --locked tox run -e clean` | `uv run python scripts/clean.py` |
+
+The `pyXY` environments build and test the installed wheel. Direct pytest uses the synchronised development environment and is useful for fast iteration, but it does not test the same packaging boundary.
+
+Arguments after `--` are forwarded to pytest:
+
+```bash
+uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }} -- -k <expression>
+uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }} -- --log-cli-level=INFO
+```
+
+## Test and coverage reports
+
+Pytest uses branch coverage and fails below 80%. It writes:
+
+- `reports/pytest/report.html`
+- `reports/pytest/report.jsonl`
+- `reports/pytest/logs/pytest.log`
+- `reports/coverage/html/index.html`
+- `reports/coverage/coverage.xml`
+- `reports/coverage/coverage.json`
+
+Live console logging is disabled by default; use `--log-cli-level=INFO` for one run.
+
+{% if use_precommit -%}
+## Pre-commit
+
+Run the complete hook set:
+
+```bash
+uv run --locked tox run -e pre-commit
+```
+
+`repo-checks` is the narrower manual-stage subset used by CI. Ruff, Mypy, and notebook validation have dedicated Tox environments to keep CI failures focused.
+
+{% endif -%}
+{% if use_notebooks -%}
+## Notebooks
+
+Start JupyterLab:
+
+```bash
+uv run --group notebooks jupyter lab
+```
+
+Ruff and `format-docstring-jupyter` validate Python cells. Exploratory notebooks under `notebooks/` must not retain removable output or volatile execution metadata. The pre-commit `nbstripout` hook enforces this when enabled.
+
+Add the `keep_output` tag or `{"keep_output": true}` cell metadata only when an exploratory output must be retained. Documentation notebooks under `docs/source/notebooks/` are governed separately and are not automatically stripped.
+
+{% endif -%}
+{% if project_kind == "data_science" and use_dvc -%}
+## DVC
+
+Check pipeline state:
+
+```bash
+uv run --locked tox run -e dvc
+```
+
+Reproduce declared stages after changing code, data, or configuration:
+
+```bash
+uv run dvc repro
+git status --short
+```
+
+Inspect declared experiment results when the project defines them:
+
+```bash
+uv run dvc metrics show
+uv run dvc plots show
+```
+
+Use `uv run dvc exp run` for experiment iterations whose parameter, metric, and plot contracts are declared in `dvc.yaml`. Commit DVC metadata, lock files, and generated `.gitignore` updates. Do not commit large data ignored by DVC.
+
+{% endif -%}
+{% if use_docs -%}
+## Documentation
+
+The complete documentation-author workflow is in `docs/README.md`.
+
+```bash
+uv run --locked tox run -e docs
+```
+
+The default target builds strict HTML and API documentation coverage. Generated output is written under `reports/sphinx/`.
+
+{% endif -%}
+{% if has_other_contributors -%}
+## Propose changes
+
+Create a focused branch and open a {{ "merge request" if ci_provider == "gitlab" else "pull request" }}. The generated description template asks for the change summary, verification performed, documentation impact, and related work.
+
+`CODEOWNERS` routes review according to the selected repository provider. Ownership identifies appropriate reviewers; repository settings determine whether approval is required before merging.
+
+Participation is governed by `CODE_OF_CONDUCT.md`.
+
+## Report bugs
+
+Before reporting a bug, search existing reports and test against a supported version when practical. Include:
+
+- the observed and expected behavior;
+- the smallest reproducible example;
+- exact commands, inputs, and the complete traceback;
+- the project version or Git commit;
+- the Python version and operating system; and
+- relevant logs or data with secrets and private information removed.
+
+{% if ci_provider == "github" -%}
+Use the generated GitHub bug-report form, which requests these fields.
+{% elif ci_provider == "gitlab" -%}
+Select the generated GitLab `Bug` issue-description template.
+{% elif ci_provider == "bitbucket" -%}
+Bitbucket does not consume repository-defined issue templates, so copy this checklist into the issue description.
+{% else -%}
+Use this checklist with the project's issue tracker.
+{% endif %}
+
+{% endif -%}
+## Code conventions
+
+- Docstrings use the **{{ "Google" if docstring_style == "google" else "NumPy" }}** convention.
+- Ruff owns Python formatting and linting.
+- Mypy runs in strict mode.
+- Public functions, classes, modules, and methods require complete docstrings.
+- Tests belong under `tests/` and should describe observable behavior.
+- Keep imports lightweight; documentation and package validation import the built wheel.
+
+## Tool reference
+
+| Tool | Documentation |
+| --- | --- |
+| `uv` | [docs.astral.sh/uv](https://docs.astral.sh/uv/) |
+| Tox | [tox.wiki](https://tox.wiki/) |
+| Ruff | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/) |
+| Mypy | [mypy.readthedocs.io](https://mypy.readthedocs.io/) |
+| pytest | [docs.pytest.org](https://docs.pytest.org/) |
+{% if use_precommit %}| pre-commit | [pre-commit.com](https://pre-commit.com/) |
+{% endif %}{% if use_notebooks %}| JupyterLab | [jupyterlab.readthedocs.io](https://jupyterlab.readthedocs.io/en/stable/) |
+{% endif %}{% if use_docs %}| Sphinx | [sphinx-doc.org](https://www.sphinx-doc.org/en/master/) |
+{% endif %}{% if project_kind == "data_science" and use_dvc %}| DVC | [dvc.org/doc](https://dvc.org/doc) |
+{% endif -%}

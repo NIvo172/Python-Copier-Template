@@ -1,0 +1,20 @@
+"""Plot a quadratic function
+=========================
+
+This example demonstrates how Sphinx Gallery executes Python scripts and captures
+their figures in the generated documentation.
+"""  # no-format-docstring
+
+import matplotlib.pyplot as plt
+
+from {{ package_name }}.main import hello
+
+message = hello("Sphinx Gallery")
+
+x_values = list(range(-5, 6))
+y_values = [value**2 for value in x_values]
+
+figure, axis = plt.subplots()
+axis.plot(x_values, y_values)
+axis.set(xlabel="x", ylabel="x²", title=f"{message}: quadratic function")
+figure.tight_layout()

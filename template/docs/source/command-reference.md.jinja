@@ -1,0 +1,172 @@
+# Project command reference
+
+This page is generated for **{{ project_name }}** and contains only commands supported by this project's selected Copier features. Run commands from the repository root unless a section says otherwise.
+
+The template repository's `docs/command-reference.md` is the complete cross-configuration reference. A full data-science showcase can add separate walkthroughs and expected outputs without changing this project-specific command contract.
+
+## Command conventions
+
+- Use `uv run --locked ...` for reproducible validation against `uv.lock`.
+- Use unlocked `uv` commands only while intentionally changing dependencies or generated state.
+- Tox is the public task interface shared by local development and CI.
+- Arguments after `tox run -e <environment> --` are forwarded to that environment's command.
+
+## Set up a checkout
+
+A contributor cloning an established repository runs:
+
+```bash
+uv sync --locked
+uv run --locked tox
+```
+
+The maintainer creating the repository runs the one-time bootstrap before normal development begins:
+
+```bash
+uv run scripts/init_project.py \
+  --git-name "Your Name" \
+  --git-email "you@example.com"
+```
+
+Do not rerun `scripts/init_project.py` in an established checkout. Its default initial tag is `v0.0.1`; `MAINTAINING.md` documents its options and recovery behavior.
+
+## Validation tasks
+
+| Goal | Command | What it validates |
+| --- | --- | --- |
+| Configured default suite | `uv run --locked tox` | The environments selected for this project |
+{% if use_precommit %}| Every repository hook | `uv run --locked tox run -e pre-commit` | All configured pre-commit hooks against all files |
+| CI repository hygiene | `uv run --locked tox run -e repo-checks` | The non-duplicated manual-stage repository checks |
+{% endif %}| Lock consistency | `uv run --locked tox run -e lock` | `uv.lock` matches `pyproject.toml` |
+| Static validation | `uv run --locked tox run -e lint` | Docstrings, Ruff, formatting, and strict Mypy |
+{% for python_version in python_versions %}| Tests on Python {{ python_version }} | `uv run --locked tox run -e py{{ python_version | replace('.', '') }}` | The built wheel installed and tested on Python {{ python_version }} |
+{% endfor %}| Complete Python matrix | `uv run --locked tox run -m test` | Every selected Python test environment |
+{% if use_notebooks %}| Notebook validation | `uv run --locked tox run -e notebooks` | Exploratory notebook outputs, metadata, and Python-cell docstrings |
+{% endif %}{% if project_kind == "data_science" and use_dvc %}| DVC state | `uv run --locked tox run -e dvc` | Pipeline dependencies and outputs are current |
+{% endif %}{% if use_uml %}| UML generation | `uv run --locked tox run -e uml` | Pyreverse/Mermaid diagram sources |
+{% endif %}| Documentation | `uv run --locked tox run -e docs` | Strict HTML plus API documentation coverage{% if use_example_gallery %}, including Sphinx-Gallery examples{% endif %} |
+| Distribution validation | `uv run --locked tox run -e package-check` | Fresh sdist/wheel metadata and wheel contents |
+| Build distributions | `uv run --locked tox run -e build` | Source and wheel distributions under `dist/` |
+| Clean generated output | `uv run --locked tox run -e clean` | Reports, builds, and generated documentation sources |
+
+List the rendered environments and their descriptions with:
+
+```bash
+uv run tox list
+```
+
+## Focused tests
+
+Use the minimum selected Python environment for a built-wheel test:
+
+```bash
+uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }} -- -k <expression>
+uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }} -- tests/test_module.py::test_name
+uv run --locked tox run -e py{{ minimum_python_version | replace('.', '') }} -- --log-cli-level=INFO
+```
+
+For faster iteration, `uv run --locked --group test pytest` tests the development environment rather than the built wheel.
+
+## Dependency operations
+
+| Goal | Command |
+| --- | --- |
+| Synchronise an established checkout | `uv sync --locked` |
+| Add a runtime dependency | `uv add <package>` |
+| Remove a runtime dependency | `uv remove <package>` |
+| Add a test dependency | `uv add --group test <package>` |
+| Add a lint or type dependency | `uv add --group lint <package>` |
+| Add a documentation dependency | `uv add --group docs <package>` |
+{% if use_notebooks %}| Add a notebook dependency | `uv add --group notebooks <package>` |
+{% endif %}{% if project_kind == "data_science" and use_dvc %}| Add a DVC dependency | `uv add --group dvc <package>` |
+{% endif %}| Resolve the lock | `uv lock` |
+| Verify the lock without changing it | `uv lock --check` |
+
+Commit `pyproject.toml` and `uv.lock` together after intentional dependency changes.
+
+{% if use_precommit %}## Pre-commit
+
+Install hooks once in a development checkout:
+
+```bash
+uv run pre-commit install
+```
+
+Run the complete configured hook set independently with:
+
+```bash
+uv run --locked tox run -e pre-commit
+```
+
+{% endif %}## Documentation
+
+| Goal | Command | Output |
+| --- | --- | --- |
+| Complete strict build | `uv run --locked tox run -e docs` | HTML and API coverage |
+| HTML only | `uv run --locked tox run -e docs -- html` | `reports/sphinx/html/` |
+| API coverage only | `uv run --locked tox run -e docs -- coverage` | `reports/sphinx/coverage/` |
+| Remove documentation output | `uv run --locked tox run -e docs -- clean` | Removes generated Sphinx sources and output |
+{% if use_uml %}| Generate UML only | `uv run --locked tox run -e uml` | Mermaid sources under `docs/source/diagrams/` |
+{% endif %}
+Sphinx warnings fail the build. API coverage fails when public symbols are undocumented or modules cannot be imported.
+
+{% if use_notebooks %}## Notebooks
+
+```bash
+uv run --group notebooks jupyter lab
+uv run --locked tox run -e notebooks
+```
+
+Exploratory notebooks live under `notebooks/`; documentation notebooks live under `docs/source/notebooks/`. Their output policies intentionally differ and are documented in `docs/README.md`.
+
+{% endif %}{% if project_kind == "data_science" and use_dvc %}## DVC pipeline
+
+| Goal | Command |
+| --- | --- |
+| Inspect pipeline state | `uv run dvc status` |
+| Reproduce changed stages | `uv run dvc repro` |
+| Show scalar metrics | `uv run dvc metrics show` |
+| Inspect declared plots | `uv run dvc plots show` |
+| Run a declared experiment | `uv run dvc exp run` |
+| Add a default storage remote | `uv run dvc remote add -d storage <remote-url>` |
+| Upload tracked data and model objects | `uv run dvc push` |
+| Retrieve tracked objects | `uv run dvc pull` |
+
+No DVC storage remote or credentials are configured by the template.
+
+{% endif %}## Packaging and version diagnostics
+
+```bash
+uv run --locked tox run -e package-check
+git describe --tags --always --dirty
+git tag --points-at HEAD
+```
+
+The project derives its version from Git tags. Preserve tags in CI and release checkouts.
+
+## Update from the Copier template
+
+Preview an update before applying it:
+
+```bash
+uvx copier update --pretend --vcs-ref=v1.1.0
+uvx copier update --vcs-ref=v1.1.0
+uv lock
+uv sync
+uv run --locked tox
+```
+
+Use a concrete release tag for reproducible upgrades. `MAINTAINING.md` documents conflict resolution, migrations, and project-owned files.
+
+## Generated outputs
+
+| Output | Produced by |
+| --- | --- |
+| `reports/pytest/report.html` and `report.jsonl` | Python test environments |
+| `reports/coverage/` | pytest coverage |
+| `reports/sphinx/html/` | Documentation HTML build |
+| `reports/sphinx/coverage/` | API documentation coverage |
+| `dist/` | Build and package-check environments |
+{% if project_kind == "data_science" and use_dvc %}| DVC-declared outputs | `dvc repro` or an experiment |
+{% endif %}
+Remove generated output through `uv run --locked tox run -e clean` rather than deleting individual report paths by hand.

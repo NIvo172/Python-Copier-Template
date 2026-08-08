@@ -1,0 +1,261 @@
+_min_copier_version: "9.17"
+_subdirectory: template
+_answers_file: .copier-answers.yml
+_message_after_copy: |
+  Project {{ project_name }} was generated.
+
+  Run the generated initialisation script once to create the Git repository, lock dependencies, generate optional DVC state, and create the default v0.0.1 tag:
+
+      uv run "{{ _copier_conf.dst_path }}/scripts/init_project.py"
+
+  The script uses the repository-local placeholder identity `John Doe <john.doe@example.com>`. Override it when needed:
+
+      uv run "{{ _copier_conf.dst_path }}/scripts/init_project.py" --git-name "Your Name" --git-email "you@example.com"
+
+  Then validate the initialised repository independently:
+
+      cd "{{ _copier_conf.dst_path }}"
+      uv run --locked tox
+
+  Re-run `copier update --vcs-ref=:current:` later to change optional features.
+
+_exclude:
+  - "{% if not use_precommit %}.pre-commit-config.yaml{% endif %}"
+  - "{% if not use_vscode %}.vscode{% endif %}"
+  - "{% if ci_provider != 'github' %}.github{% endif %}"
+  - "{% if ci_provider != 'github' or not has_other_contributors %}.github/CODEOWNERS{% endif %}"
+  - "{% if ci_provider != 'github' or not has_other_contributors %}.github/PULL_REQUEST_TEMPLATE.md{% endif %}"
+  - "{% if ci_provider != 'github' or not has_other_contributors %}.github/ISSUE_TEMPLATE{% endif %}"
+  - "{% if ci_provider != 'github' or not use_docs %}.github/workflows/docs-pages.yml{% endif %}"
+  - "{% if ci_provider != 'gitlab' %}.gitlab-ci.yml{% endif %}"
+  - "{% if ci_provider != 'gitlab' or not has_other_contributors %}.gitlab{% endif %}"
+  - "{% if ci_provider != 'bitbucket' %}bitbucket-pipelines.yml{% endif %}"
+  - "{% if ci_provider != 'bitbucket' or not has_other_contributors %}.bitbucket{% endif %}"
+  - "{% if not has_other_contributors %}CODE_OF_CONDUCT.md{% endif %}"
+  - "{% if not use_docs %}docs{% endif %}"
+  - "{% if not use_docs %}scripts/build_docs.py{% endif %}"
+  - "{% if not use_docs or not use_uml %}scripts/generate_uml.py{% endif %}"
+  - "{% if not use_notebooks %}notebooks{% endif %}"
+  - "{% if not use_notebooks %}scripts/check_notebooks.py{% endif %}"
+  - "{% if not use_notebooks %}docs/source/notebooks{% endif %}"
+  - "{% if project_kind != 'data_science' or not use_dvc %}.dvc{% endif %}"
+  - "{% if project_kind != 'data_science' or not use_dvc %}.dvcignore{% endif %}"
+  - "{% if project_kind != 'data_science' or not use_dvc %}dvc.yaml{% endif %}"
+  - "{% if not use_uml %}docs/source/diagrams{% endif %}"
+  - "{% if not use_docs or not use_example_gallery %}examples{% endif %}"
+  - "{% if project_kind != 'data_science' %}tests/data{% endif %}"
+  - "{% if project_kind != 'data_science' %}configs{% endif %}"
+  - "{% if project_kind != 'data_science' %}data{% endif %}"
+  - "{% if project_kind != 'data_science' %}models{% endif %}"
+  - "{% if project_kind != 'data_science' %}references{% endif %}"
+  - "{% if project_kind != 'data_science' %}reports{% endif %}"
+
+project_name:
+  type: str
+  qmark: ">"
+  help: Human-readable project name
+  default: My Python Project
+
+project_description:
+  type: str
+  qmark: ">"
+  help: One-line project description
+  default: A modern pure-Python project
+
+distribution_name:
+  type: str
+  qmark: ">"
+  help: Distribution name used by package indexes
+  default: "{{ project_name | lower | replace('_', '-') | replace(' ', '-') }}"
+  validator: >-
+    {% if not (distribution_name | regex_search('^[a-z0-9]+(?:-[a-z0-9]+)*$')) %}
+    Use lowercase letters, digits, and single hyphens.
+    {% endif %}
+
+package_name:
+  type: str
+  qmark: ">"
+  help: Import package name
+  default: "{{ distribution_name | replace('-', '_') }}"
+  validator: >-
+    {% if not (package_name | regex_search('^[a-z][a-z0-9_]*$')) %}
+    Use a valid lowercase Python identifier.
+    {% endif %}
+
+user_name:
+  type: str
+  qmark: ">"
+  help: Primary author name
+  default: Your Name
+
+user_email:
+  type: str
+  qmark: ">"
+  help: Primary author email
+  default: you@example.com
+
+repository_url:
+  type: str
+  qmark: ">"
+  help: Repository URL; leave empty if not known yet
+  default: ""
+
+homepage_url:
+  type: str
+  qmark: ">"
+  help: Project homepage URL; leave empty if not applicable
+  default: ""
+
+documentation_url:
+  type: str
+  qmark: ">"
+  help: Published documentation URL; leave empty if not available
+  default: ""
+
+changelog_url:
+  type: str
+  qmark: ">"
+  help: Published changelog URL; leave empty if not available
+  default: ""
+
+minimum_python_version:
+  type: str
+  qmark: ">"
+  help: Minimum supported Python version
+  choices:
+    Python 3.11: "3.11"
+    Python 3.12: "3.12"
+    Python 3.13: "3.13"
+    Python 3.14: "3.14"
+  default: "3.11"
+
+python_versions:
+  type: str
+  qmark: ">"
+  help: Python versions tested in CI and Tox
+  choices:
+    Python 3.11: "3.11"
+    Python 3.12: "3.12"
+    Python 3.13: "3.13"
+    Python 3.14: "3.14"
+  multiselect: true
+  default: >-
+    {%- if minimum_python_version == "3.11" -%}
+    ["3.11", "3.12", "3.13", "3.14"]
+    {%- elif minimum_python_version == "3.12" -%}
+    ["3.12", "3.13", "3.14"]
+    {%- elif minimum_python_version == "3.13" -%}
+    ["3.13", "3.14"]
+    {%- else -%}
+    ["3.14"]
+    {%- endif -%}
+  validator: >-
+    {% if minimum_python_version not in python_versions %}
+    The minimum Python version must be included in the tested versions.
+    {% elif minimum_python_version == "3.12" and "3.11" in python_versions %}
+    Tested versions cannot be lower than the minimum version.
+    {% elif minimum_python_version == "3.13" and ("3.11" in python_versions or "3.12" in python_versions) %}
+    Tested versions cannot be lower than the minimum version.
+    {% elif minimum_python_version == "3.14" and ("3.11" in python_versions or "3.12" in python_versions or "3.13" in python_versions) %}
+    Tested versions cannot be lower than the minimum version.
+    {% endif %}
+
+build_backend:
+  type: str
+  qmark: ">"
+  help: Build backend and Git-version integration
+  choices:
+    Hatchling with hatch-vcs: hatchling
+    Setuptools with setuptools-scm: setuptools
+  default: hatchling
+
+project_kind:
+  type: str
+  qmark: ">"
+  help: Project structure
+  choices:
+    Python library: library
+    Python application: application
+    Data-science package: data_science
+  default: library
+
+docstring_style:
+  type: str
+  qmark: ">"
+  help: Docstring convention
+  choices:
+    Google style: google
+    NumPy style: numpy
+  default: google
+
+use_docs:
+  type: bool
+  qmark: ">"
+  help: Include Sphinx documentation
+  default: true
+
+use_notebooks:
+  type: bool
+  qmark: ">"
+  help: Include Jupyter notebooks and notebook tooling
+  default: "{{ project_kind == 'data_science' }}"
+
+use_dvc:
+  type: bool
+  qmark: ">"
+  help: Include DVC data and model versioning
+  default: false
+  when: "{{ project_kind == 'data_science' }}"
+
+use_uml:
+  type: bool
+  qmark: ">"
+  help: Include Pyreverse UML generation
+  default: false
+  when: "{{ use_docs }}"
+
+use_example_gallery:
+  type: bool
+  qmark: ">"
+  help: Include an executable Sphinx example gallery
+  default: false
+  when: "{{ use_docs }}"
+
+use_precommit:
+  type: bool
+  qmark: ">"
+  help: Include pre-commit hooks
+  default: true
+
+use_vscode:
+  type: bool
+  qmark: ">"
+  help: Include shared VS Code settings
+  default: true
+
+ci_provider:
+  type: str
+  qmark: ">"
+  help: Continuous integration configuration
+  choices:
+    GitHub Actions: github
+    GitLab CI: gitlab
+    Bitbucket Pipelines: bitbucket
+    None: none
+  default: github
+
+has_other_contributors:
+  type: bool
+  qmark: ">"
+  help: Add code ownership and collaboration templates
+  default: false
+
+code_owners:
+  type: str
+  qmark: ">"
+  help: Space-separated provider-native users, teams, groups, or emails that own the repository
+  when: "{{ has_other_contributors }}"
+  validator: >-
+    {% if has_other_contributors and not (code_owners | trim) %}
+    Enter at least one code owner.
+    {% endif %}

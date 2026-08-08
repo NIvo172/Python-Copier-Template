@@ -1,0 +1,155 @@
+"""Build and validate Sphinx documentation."""
+
+from __future__ import annotations
+
+import argparse
+import html
+import os
+import subprocess
+import sys
+from pathlib import Path
+from shutil import rmtree
+from typing import Literal
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "docs" / "source"
+OUTPUT = ROOT / "reports" / "sphinx"
+GENERATE_UML = {{ use_uml }}
+BuildTarget = Literal["all", "html", "coverage", "clean"]
+
+
+def run(*arguments: str, environment: dict[str, str] | None = None) -> None:
+    """Run a documentation command from the project root."""
+    subprocess.run(arguments, cwd=ROOT, env=environment, check=True)
+
+
+def parse_arguments() -> argparse.Namespace:
+    """Parse the requested documentation build target."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "target",
+        choices=("all", "html", "coverage", "clean"),
+        nargs="?",
+        default="all",
+        help="Documentation target; 'all' runs HTML and API coverage.",
+    )
+    return parser.parse_args()
+
+
+def build(builder: Literal["html", "coverage"]) -> None:
+    """Run one Sphinx builder with an isolated doctree directory."""
+    environment = os.environ.copy()
+    environment["PROJECT_DOCS_BUILDER"] = builder
+    run(
+        "sphinx-build",
+        "-b",
+        builder,
+        "-d",
+        str(OUTPUT / ".doctrees" / builder),
+        str(SOURCE),
+        str(OUTPUT / builder),
+        "--fail-on-warning",
+        "--keep-going",
+        environment=environment,
+    )
+
+
+def check_api_coverage() -> None:
+    """Write an HTML summary and fail when public API documentation is incomplete."""
+    coverage_directory = OUTPUT / "coverage"
+    report = coverage_directory / "python.txt"
+    if not report.is_file():
+        raise FileNotFoundError(f"Sphinx coverage report was not created: {report}")
+
+    report_text = report.read_text(encoding="utf-8")
+    failure_markers = (
+        "\nFunctions:\n",
+        "\nClasses:\n",
+        "\nModules that failed to import\n",
+    )
+    incomplete = any(marker in report_text for marker in failure_markers)
+    status = "Incomplete" if incomplete else "Complete"
+    status_class = "failure" if incomplete else "success"
+    html_report = coverage_directory / "index.html"
+    html_report.write_text(
+        f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API documentation coverage</title>
+  <style>
+{% raw %}
+    body {{ max-width: 960px; margin: 2rem auto; padding: 0 1rem; font-family: system-ui, sans-serif; }}
+    .success {{ color: #146c2e; }}
+    .failure {{ color: #b42318; }}
+    pre {{ overflow-x: auto; padding: 1rem; background: #f6f8fa; border: 1px solid #d0d7de; }}
+{% endraw %}
+  </style>
+</head>
+<body>
+  <h1>API documentation coverage</h1>
+  <p class="{status_class}"><strong>Status: {status}</strong></p>
+  <p>Source report: <code>python.txt</code></p>
+  <pre>{html.escape(report_text)}</pre>
+</body>
+</html>
+""",
+        encoding="utf-8",
+    )
+
+    if incomplete:
+        print(report_text, file=sys.stderr)
+        raise RuntimeError("Sphinx API documentation coverage is incomplete.")
+
+
+def clean_documentation() -> None:
+    """Remove generated documentation files without deleting other project reports."""
+    rmtree(OUTPUT, ignore_errors=True)
+    rmtree(ROOT / "docs" / "_build", ignore_errors=True)
+    rmtree(SOURCE / "_autosummary", ignore_errors=True)
+    rmtree(SOURCE / "auto_examples", ignore_errors=True)
+    (SOURCE / "sg_execution_times.rst").unlink(missing_ok=True)
+    for diagram in (SOURCE / "diagrams").glob("*.mmd"):
+        diagram.unlink(missing_ok=True)
+
+
+def main() -> int:
+    """Build the requested documentation target and return an exit code."""
+    target: BuildTarget = parse_arguments().target
+
+    if target == "clean":
+        clean_documentation()
+        return 0
+
+    if GENERATE_UML:
+        run(sys.executable, "scripts/generate_uml.py")
+
+    if target == "html":
+        build("html")
+        return 0
+    if target == "coverage":
+        build("coverage")
+        check_api_coverage()
+        return 0
+
+    failures: list[str] = []
+    try:
+        build("coverage")
+        check_api_coverage()
+    except (FileNotFoundError, RuntimeError, subprocess.CalledProcessError) as error:
+        failures.append(f"coverage: {error}")
+
+    try:
+        build("html")
+    except subprocess.CalledProcessError as error:
+        failures.append(f"html: {error}")
+
+    if failures:
+        raise RuntimeError("Documentation build failed:\n- " + "\n- ".join(failures))
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

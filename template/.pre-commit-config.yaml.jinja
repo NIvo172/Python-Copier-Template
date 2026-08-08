@@ -1,0 +1,63 @@
+default_stages: [pre-commit]
+
+repos:
+{% if use_notebooks %}
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        files: ^notebooks/.*\.ipynb$
+
+{% endif %}
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        stages: [pre-commit, manual]
+        args: [--maxkb=3000]
+      - id: check-case-conflict
+        stages: [pre-commit, manual]
+      - id: check-illegal-windows-names
+        stages: [pre-commit, manual]
+      - id: check-json
+        stages: [pre-commit, manual]
+      - id: check-merge-conflict
+        stages: [pre-commit, manual]
+        args: [--assume-in-merge]
+      - id: check-toml
+        stages: [pre-commit, manual]
+      - id: check-yaml
+        stages: [pre-commit, manual]
+      - id: debug-statements
+        stages: [pre-commit, manual]
+      - id: detect-private-key
+        stages: [pre-commit, manual]
+      - id: end-of-file-fixer
+        stages: [pre-commit, manual]
+      - id: mixed-line-ending
+        stages: [pre-commit, manual]
+      - id: name-tests-test
+        stages: [pre-commit, manual]
+        args: [--pytest-test-first]
+      - id: trailing-whitespace
+        stages: [pre-commit, manual]
+        args: [--markdown-linebreak-ext=md]
+{% if project_kind == "data_science" and use_dvc %}        exclude: ^dvc\.lock$
+{% endif %}
+  - repo: https://github.com/jsh9/format-docstring
+    rev: "0.4.0"
+    hooks:
+      - id: format-docstring
+        args: [--config=pyproject.toml]
+{% if use_notebooks %}
+      - id: format-docstring-jupyter
+        args: [--config=pyproject.toml]
+        files: ^(notebooks|docs/source/notebooks)/.*\.ipynb$
+{% endif %}
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

@@ -1,0 +1,110 @@
+# {{ project_name }}
+
+{{ project_description }}
+
+## Requirements
+
+- Python {{ minimum_python_version }} or newer
+- [`uv`](https://docs.astral.sh/uv/)
+
+## Installation
+
+After the distribution is available from the configured package index:
+
+```bash
+uv add {{ distribution_name }}
+```
+
+The equivalent pip command is:
+
+```bash
+python -m pip install {{ distribution_name }}
+```
+
+For repository development, use the locked checkout workflow in `CONTRIBUTING.md` instead of installing from the package index.
+
+## Usage
+
+{% if project_kind == "application" -%}
+The installed command is:
+
+```bash
+{{ distribution_name }}
+```
+
+From a development checkout:
+
+```bash
+uv run {{ distribution_name }}
+```
+{% else -%}
+The generated starter API exposes a greeting function:
+
+```python
+from {{ package_name }}.main import hello
+
+print(hello("Ada"))
+```
+{% endif -%}
+{% if project_kind == "data_science" %}
+Data-science assets are organised under `configs/`, `data/`, `models/`, `references/`, and `reports/`{% if use_notebooks %}, with exploratory work under `notebooks/`{% endif %}.
+{% if use_dvc %}DVC metadata and pipeline state are tracked through `.dvc/`, `dvc.yaml`, and `dvc.lock`; no storage remote is configured by the template.
+{% endif %}
+{% endif -%}
+## Development
+
+For an established repository checkout:
+
+```bash
+uv sync --locked
+uv run --locked tox
+```
+
+{% if use_precommit -%}
+Install the repository hooks once:
+
+```bash
+uv run pre-commit install
+```
+
+{% endif -%}
+The repository guides separate daily development from maintainer-only operations:
+
+| File | Audience | Contents |
+| --- | --- | --- |
+| `CONTRIBUTING.md` | Contributors | Environment setup, dependencies, validation, reports, and optional feature workflows |
+| `MAINTAINING.md` | Maintainers | One-time bootstrap, lock/version policy, CI, builds, collaboration, and Copier updates |
+{% if use_docs %}| `docs/README.md` | Documentation authors | Pages, API reference, examples{% if use_notebooks %}, notebooks{% endif %}{% if use_uml %}, and UML{% endif %} |
+{% endif %}{% if has_other_contributors %}| `CODE_OF_CONDUCT.md` | Community | Participation and enforcement standards |
+{% endif %}
+The one-time `scripts/init_project.py` bootstrap is documented in `MAINTAINING.md`. Contributors cloning an existing repository should not rerun it.
+
+## Validation outputs
+
+The default Tox suite writes:
+
+- `reports/pytest/report.html`: self-contained test report.
+- `reports/pytest/report.jsonl`: machine-readable pytest event stream.
+- `reports/coverage/html/index.html`: browser-readable test coverage.
+{% if use_docs %}- `reports/sphinx/html/index.html`: rendered documentation.
+- `reports/sphinx/coverage/index.html`: API documentation coverage.
+{% endif %}
+Generated output is ignored by Git and can be removed with:
+
+```bash
+uv run --locked tox run -e clean
+```
+
+{% if homepage_url or documentation_url or repository_url or changelog_url -%}
+## Project links
+
+{% if homepage_url %}- [Homepage]({{ homepage_url }})
+{% endif %}{% if documentation_url %}- [Documentation]({{ documentation_url }})
+{% endif %}{% if repository_url %}- [Repository]({{ repository_url }})
+- [Issues]({{ repository_url }}/issues)
+{% endif %}{% if changelog_url %}- [Changelog]({{ changelog_url }})
+{% endif %}
+{% endif -%}
+## Licence
+
+This project is licensed under the MIT License. See `LICENSE`.

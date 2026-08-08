@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+import importlib.metadata
+import runpy
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+import {{ package_name }} as package_module
+from {{ package_name }} import main as main_module
+from {{ package_name }}.main import hello, main
+
+
+def module_path(module: ModuleType) -> Path:
+    assert module.__file__ is not None
+    return Path(module.__file__)
+
+
+def test_hello_default() -> None:
+    assert hello() == "Hello, World!"
+
+
+def test_hello_name() -> None:
+    assert hello("Ada") == "Hello, Ada!"
+
+
+def test_main(capsys: pytest.CaptureFixture[str]) -> None:
+    main()
+    assert capsys.readouterr().out == "Hello, World!\n"
+
+
+def test_package_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing_version(distribution_name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(distribution_name)
+
+    monkeypatch.setattr(importlib.metadata, "version", missing_version)
+    namespace = runpy.run_path(str(module_path(package_module)))
+
+    assert namespace["__version__"] == "0+unknown"
+
+
+def test_main_module_execution(capsys: pytest.CaptureFixture[str]) -> None:
+    runpy.run_path(str(module_path(main_module)), run_name="__main__")
+
+    assert capsys.readouterr().out == "Hello, World!\n"

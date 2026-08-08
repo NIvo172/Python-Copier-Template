@@ -1,0 +1,138 @@
+clone:
+  depth: full
+
+definitions:
+  caches:
+    uv: ~/.cache/uv
+  steps:
+{% if use_precommit %}
+    - step: &repo-checks
+        name: Repository checks
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e repo-checks
+{% endif %}
+    - step: &lock
+        name: Lockfile validation
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e lock
+    - step: &lint
+        name: Lint and type checks
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e lint
+{% for python_version in python_versions %}
+    - step: &test-py{{ python_version | replace('.', '') }}
+        name: Test Python {{ python_version }}
+        image: "python:{{ python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e py{{ python_version | replace('.', '') }}
+          - mkdir -p ci-artifacts/py{{ python_version | replace('.', '') }}
+          - cp -R reports/. ci-artifacts/py{{ python_version | replace('.', '') }}/
+        artifacts:
+          - ci-artifacts/py{{ python_version | replace('.', '') }}/**
+{% endfor %}
+{% if use_notebooks %}
+    - step: &notebooks
+        name: Notebook checks
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e notebooks
+{% endif %}
+{% if project_kind == "data_science" and use_dvc %}
+    - step: &dvc
+        name: DVC checks
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e dvc
+{% endif %}
+{% if use_docs %}
+    - step: &docs
+        name: Documentation
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e docs
+        artifacts:
+          - reports/sphinx/**
+{% endif %}
+    - step: &package-check
+        name: Validate distributions
+        image: "python:{{ minimum_python_version }}-slim"
+        caches:
+          - uv
+        script:
+          - python -m pip install uv
+          - uvx --with tox-uv tox run -e package-check
+        artifacts:
+          download: false
+          paths:
+            - dist/**
+
+pipelines:
+  default:
+    - parallel:
+        steps:
+{% if use_precommit %}
+          - step: *repo-checks
+{% endif %}
+          - step: *lock
+          - step: *lint
+{% for python_version in python_versions %}
+          - step: *test-py{{ python_version | replace('.', '') }}
+{% endfor %}
+{% if use_notebooks %}
+          - step: *notebooks
+{% endif %}
+{% if project_kind == "data_science" and use_dvc %}
+          - step: *dvc
+{% endif %}
+{% if use_docs %}
+          - step: *docs
+{% endif %}
+    - step: *package-check
+
+  pull-requests:
+    "**":
+      - parallel:
+          steps:
+{% if use_precommit %}
+            - step: *repo-checks
+{% endif %}
+            - step: *lock
+            - step: *lint
+{% for python_version in python_versions %}
+            - step: *test-py{{ python_version | replace('.', '') }}
+{% endfor %}
+{% if use_notebooks %}
+            - step: *notebooks
+{% endif %}
+{% if project_kind == "data_science" and use_dvc %}
+            - step: *dvc
+{% endif %}
+{% if use_docs %}
+            - step: *docs
+{% endif %}
+      - step: *package-check

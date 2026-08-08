@@ -1,0 +1,146 @@
+[tox]
+requires =
+    tox>=4.44
+    tox-uv>=1.35
+env_list =
+{% if use_precommit %}
+    repo-checks
+{% endif %}
+    lock
+    lint
+    py{{ minimum_python_version | replace('.', '') }}
+{% if use_notebooks %}
+    notebooks
+{% endif %}
+{% if project_kind == "data_science" and use_dvc %}
+    dvc
+{% endif %}
+{% if use_docs %}
+    docs
+{% endif %}
+    package-check
+
+[testenv]
+description = test the installed wheel with {base_python}
+labels = test
+package = wheel
+dependency_groups = test
+commands =
+    pytest {posargs}
+
+{% for python_version in python_versions -%}
+[testenv:py{{ python_version | replace('.', '') }}]
+description = test the installed wheel with Python {{ python_version }}
+
+{% endfor -%}
+{% if use_precommit -%}
+[testenv:pre-commit]
+description = run every configured pre-commit hook against all files
+labels = check
+package = skip
+dependency_groups = lint
+pass_env =
+    PRE_COMMIT_HOME
+    TMPDIR
+commands =
+    pre-commit run --all-files --show-diff-on-failure
+
+[testenv:repo-checks]
+description = run repository hygiene hooks without duplicating lint, type, or notebook checks
+labels = check
+package = skip
+dependency_groups = lint
+pass_env =
+    PRE_COMMIT_HOME
+    TMPDIR
+commands =
+    pre-commit run --hook-stage manual --all-files --show-diff-on-failure
+
+{% endif -%}
+[testenv:lock]
+description = verify that uv.lock matches pyproject.toml
+labels = check, lock
+package = skip
+allowlist_externals = uv
+commands =
+    uv lock --check
+
+[testenv:lint]
+description = verify docstrings, linting, formatting, and static types
+labels = check
+package = skip
+dependency_groups = lint
+allowlist_externals = git
+commands =
+    format-docstring src tests scripts{% if use_example_gallery %} examples{% endif %}{% if use_docs %} docs/source/conf.py{% endif %}
+    git diff --exit-code -- src tests scripts{% if use_example_gallery %} examples{% endif %}{% if use_docs %} docs/source/conf.py{% endif %}
+    ruff check .
+    ruff format --check .
+    mypy src tests scripts
+
+{% if use_notebooks -%}
+[testenv:notebooks]
+description = validate notebook docstrings and stripped exploratory outputs
+labels = check, notebooks
+package = skip
+dependency_groups = lint
+allowlist_externals = git
+commands =
+    format-docstring-jupyter notebooks{% if use_docs %} docs/source/notebooks{% endif %}
+    git diff --exit-code -- notebooks{% if use_docs %} docs/source/notebooks{% endif %}
+    python scripts/check_notebooks.py
+
+{% endif -%}
+{% if project_kind == "data_science" and use_dvc -%}
+[testenv:dvc]
+description = validate DVC repository metadata and pipeline state
+labels = check, data
+package = skip
+dependency_groups = dvc
+commands =
+    dvc status
+
+{% endif -%}
+{% if use_docs and use_uml -%}
+[testenv:uml]
+description = generate Pyreverse UML Mermaid diagrams
+labels = docs
+package = wheel
+dependency_groups = docs
+commands =
+    python scripts/generate_uml.py
+
+{% endif -%}
+{% if use_docs -%}
+[testenv:docs]
+description = generate UML when enabled and build the selected documentation target
+labels = check, docs
+package = wheel
+dependency_groups = docs
+commands =
+    python scripts/build_docs.py {posargs:all}
+
+{% endif -%}
+[testenv:package-check]
+description = build and validate source and wheel distributions
+labels = check, package
+package = skip
+dependency_groups = package-check
+allowlist_externals = uv
+commands =
+    python scripts/check_package.py
+
+[testenv:build]
+description = build the source distribution and wheel
+labels = check, package
+package = skip
+allowlist_externals = uv
+commands =
+    uv build
+
+[testenv:clean]
+description = remove generated artifacts
+labels = maintenance
+package = skip
+commands =
+    python scripts/clean.py

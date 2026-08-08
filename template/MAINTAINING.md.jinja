@@ -1,0 +1,246 @@
+# Maintaining {{ project_name }}
+
+This guide is for the initial project owner and long-term maintainers. Daily checkout setup, tests, and coding conventions are documented in `CONTRIBUTING.md`.
+
+## Bootstrap a newly rendered repository
+
+Run this command once, before normal development begins:
+
+```bash
+uv run scripts/init_project.py
+```
+
+The script is a standalone PEP 723 script, so `uv` runs it before the generated package has Git-derived version metadata.
+
+Override the repository-local Git identity when required:
+
+```bash
+uv run scripts/init_project.py \
+  --git-name "Your Name" \
+  --git-email "you@example.com"
+```
+
+Available options:
+
+```text
+--git-name NAME       repository-local Git author name
+--git-email EMAIL     repository-local Git author email
+--tag TAG             initial tag; default v0.0.1
+```
+
+Without overrides, initialisation uses the repository-local placeholder `John Doe <john.doe@example.com>`. It does not change global Git configuration.
+
+### Bootstrap lifecycle
+
+The script:
+
+1. verifies `git` and `uv`;
+2. initialises a `main` branch and repository-local identity;
+3. creates `Initial project` when no Git `HEAD` exists;
+4. runs `uv sync`, creating `.venv` and `uv.lock`;
+5. reruns pre-commit while automatic fixes keep changing files, up to three attempts;
+{% if project_kind == "data_science" and use_dvc %}6. reproduces stages declared in `dvc.yaml` and stabilises hooks again;
+{% else %}6. skips DVC because it is not configured;
+{% endif %}7. commits lock and generated-state changes when necessary;
+8. requires a clean worktree;
+9. creates the requested initial tag or verifies that it points to `HEAD`;
+10. synchronises the tag-derived installed version; and
+11. verifies that the worktree remains clean.
+
+Output is written directly to the terminal. Running the initialisation script does not create a log file.
+
+Initialisation may resume a partial first run, but it is not a contributor-onboarding command. The script refuses to move an existing initial tag from another commit.
+
+Validate the initialised repository as a separate step:
+
+```bash
+uv run --locked tox
+```
+
+Keeping validation separate makes the one-time repository lifecycle explicit and leaves Tox as the repeatable validation interface used by contributors and CI.
+
+## Dependency and lock policy
+
+`pyproject.toml` is the declaration source and `uv.lock` is the resolved source. Contributors synchronise with:
+
+```bash
+uv sync --locked
+```
+
+Maintainers intentionally update dependencies with `uv add`, `uv remove`, or direct `pyproject.toml` edits followed by:
+
+```bash
+uv lock
+uv sync
+uv run --locked tox
+```
+
+A pip-compatible external view can be exported without replacing the lock:
+
+```bash
+uv export --frozen --format requirements.txt --output-file requirements.txt
+```
+
+`renovate.json` configures optional automated updates for every dependency manager Renovate detects. This includes PEP 621 dependencies, weekly `uv.lock` maintenance{% if use_precommit %}, pre-commit hooks{% endif %}{% if ci_provider == "github" %}, GitHub Actions{% elif ci_provider == "gitlab" %}, GitLab CI dependencies{% elif ci_provider == "bitbucket" %}, Bitbucket Pipelines dependencies{% endif %}, container images, and supported dependency files added later. Routine non-major updates are grouped, while major upgrades remain separate.
+
+Renovate may update dependency references in CI configuration but does not otherwise change CI jobs, permissions, triggers, or validation policy. It remains inactive until the bot is enabled for the repository; every proposed update should pass the normal locked Tox suite before merging.
+
+## Tox and task-script architecture
+
+Tox is the supported task interface. Dependencies are declared once in `pyproject.toml` dependency groups and selected by Tox through `dependency_groups`; they should not normally be repeated under Tox `deps`.
+
+Short declarative commands live in `tox.ini`. Python scripts exist for stateful, multi-step, filesystem-oriented, or cross-platform policy:
+
+| Script | Lifecycle | Responsibility |
+| --- | --- | --- |
+| `scripts/init_project.py` | One-time bootstrap | Git, dependency lock, generated state, and initial tag |
+| `scripts/clean.py` | Recurring maintenance | Cross-platform generated-output cleanup |
+| `scripts/check_package.py` | Recurring validation | Fresh sdist/wheel builds, Twine checks, and wheel-content validation |
+{% if use_docs %}| `scripts/build_docs.py` | Recurring validation | Strict Sphinx HTML/API coverage, aggregation, and cleanup{% if use_uml %}, including UML generation{% endif %} |
+{% endif %}{% if use_docs and use_uml %}| `scripts/generate_uml.py` | Recurring generation | Pyreverse and Mermaid output |
+{% endif %}{% if use_notebooks %}| `scripts/check_notebooks.py` | Recurring validation | Exploratory notebook output and metadata policy |
+{% endif %}
+Normal Tox and CI tasks do not call `init_project.py`.
+
+## Build and versioning
+
+This project uses **{{ "Hatchling with hatch-vcs" if build_backend == "hatchling" else "Setuptools with setuptools-scm" }}**. Versions come from Git tags.
+
+Validate source and wheel distributions:
+
+```bash
+uv run --locked tox run -e package-check
+```
+
+The package-check task removes stale output, builds an sdist and wheel, runs `twine check --strict`, and validates wheel contents.
+
+A build from `v0.0.1` receives version `0.0.1`. Commits after a tag receive a PEP 440 development version derived from repository state. CI must fetch tags and sufficient history.
+
+Before creating a release tag:
+
+```bash
+uv lock --check
+uv run --locked tox
+uv run --locked tox run -m test
+git status --short
+```
+
+Then tag the clean validated commit using the project's release policy.
+
+## CI
+
+{% if ci_provider == "github" -%}
+GitHub Actions is configured in `.github/workflows/ci.yml`.
+{% elif ci_provider == "gitlab" -%}
+GitLab CI is configured in `.gitlab-ci.yml`.
+{% elif ci_provider == "bitbucket" -%}
+Bitbucket Pipelines is configured in `bitbucket-pipelines.yml`.
+{% else -%}
+No CI provider configuration was generated.
+{% endif %}
+{% if ci_provider != "none" -%}
+Configured CI provisions Python and `uv`, then invokes named Tox environments for lock checks, lint, the Python matrix, optional capabilities, documentation, and distribution validation. Validation policy belongs in Tox and task scripts rather than provider YAML.
+
+Test and coverage reports, documentation, and distributions are retained as provider artefacts where supported.
+{% else -%}
+Run the named Tox environments locally or add a provider configuration through a later Copier update.
+{% endif -%}
+{% if has_other_contributors -%}
+## Collaboration configuration
+
+The repository includes a provider-native ownership file and change-description template:
+
+{% if ci_provider == "github" -%}
+- `.github/CODEOWNERS`
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/ISSUE_TEMPLATE/bug_report.yml`
+{% elif ci_provider == "gitlab" -%}
+- `.gitlab/CODEOWNERS`
+- `.gitlab/merge_request_templates/Default.md`
+- `.gitlab/issue_templates/Bug.md`
+{% elif ci_provider == "bitbucket" -%}
+- `.bitbucket/CODEOWNERS`
+- `.bitbucket/pull_request_template.md`
+{% else -%}
+- `CODE_OF_CONDUCT.md` and the reporting workflow in `CONTRIBUTING.md`
+{% endif %}
+
+`CODE_OF_CONDUCT.md` defines participation standards. Update ownership rules when maintainers or team responsibilities change. Provider repository settings control protected branches, required approvals, and other enforcement; the generated files do not change remote settings.
+
+{% endif -%}
+{% if project_kind == "data_science" and use_dvc -%}
+## DVC storage
+
+The repository contains DVC metadata and pipeline validation but no storage remote. Configure one according to the project's infrastructure:
+
+```bash
+uv run dvc remote add -d storage <remote-url>
+uv run dvc push
+```
+
+Commit `.dvc/config` only when it contains non-secret shared configuration. Keep credentials in provider-specific secure configuration, never in Git.
+
+Prefer explicit DVC contracts: stages should consume every declared parameter and identify scalar results under `metrics` and visual comparison data under `plots`. Deterministic summaries should record stable input provenance such as content digests rather than machine-specific absolute paths.
+
+{% endif -%}
+{% if use_docs -%}
+## Documentation maintenance
+
+Documentation authoring is documented in `docs/README.md`. Maintainer-level validation uses:
+
+```bash
+uv run --locked tox run -e docs
+```
+
+The default target builds HTML and API documentation coverage. Sphinx warnings and undocumented public API fail validation.
+
+{% endif -%}
+## Update from the Copier template
+
+Start from a clean worktree and preview:
+
+```bash
+copier update --pretend --vcs-ref=:current:
+```
+
+Apply the update:
+
+```bash
+copier update --vcs-ref=:current:
+```
+
+Use a concrete template tag such as `--vcs-ref=v0.2.0` for an intentional version upgrade. Copier compares the old template, new template, and project changes.
+
+After resolving conflicts:
+
+```bash
+uv lock
+uv sync
+uv run --locked tox
+```
+
+Review additions and removals before committing. Do not edit `.copier-answers.yml` manually. Treat package-name, project-kind, minimum-Python, and build-backend changes as migrations.
+
+## Generated output and cleanup
+
+Remove reports, documentation output, build artefacts, and generated sources:
+
+```bash
+uv run --locked tox run -e clean
+```
+
+The cleanup task does not remove source data, authored documentation, the lockfile, or committed DVC metadata.
+
+## Maintainer reference
+
+- [Copier](https://copier.readthedocs.io/)
+- [`uv`](https://docs.astral.sh/uv/)
+- [Tox](https://tox.wiki/)
+{% if build_backend == "hatchling" %}- [Hatchling](https://hatch.pypa.io/latest/config/build/)
+- [`hatch-vcs`](https://github.com/ofek/hatch-vcs)
+{% else %}- [Setuptools](https://setuptools.pypa.io/)
+- [`setuptools-scm`](https://setuptools-scm.readthedocs.io/)
+{% endif %}{% if ci_provider == "github" %}- [GitHub Actions](https://docs.github.com/actions)
+{% elif ci_provider == "gitlab" %}- [GitLab CI/CD](https://docs.gitlab.com/ci/)
+{% elif ci_provider == "bitbucket" %}- [Bitbucket Pipelines](https://support.atlassian.com/bitbucket-cloud/docs/get-started-with-bitbucket-pipelines/)
+{% endif -%}

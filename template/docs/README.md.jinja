@@ -1,0 +1,364 @@
+# Documentation contributor guide
+
+This directory contains the Sphinx documentation for **{{ project_name }}**. Tox is the preferred interface because it uses the same isolated documentation environment locally and in CI. Direct commands are included for focused debugging and for understanding what Tox invokes.
+
+## Quick reference
+
+| Task | Preferred Tox command | Direct command |
+| --- | --- | --- |
+| Build HTML and validate API coverage | `uv run --locked tox run -e docs` | `uv run --locked --group docs python scripts/build_docs.py all` |
+| Build HTML only | `uv run --locked tox run -e docs -- html` | `uv run --locked --group docs python scripts/build_docs.py html` |
+| Validate API documentation coverage | `uv run --locked tox run -e docs -- coverage` | `uv run --locked --group docs python scripts/build_docs.py coverage` |
+| Remove generated documentation files | `uv run --locked tox run -e docs -- clean` | `uv run --locked --group docs python scripts/build_docs.py clean` |
+{% if use_uml %}| Generate UML sources only | `uv run --locked tox run -e uml` | `uv run --locked --group docs python scripts/generate_uml.py` |
+{% endif %}
+The default `docs` target is the CI-quality check. It installs the project wheel, runs API documentation coverage, builds the HTML site, treats Sphinx warnings as failures, and writes builder-specific doctrees and output under `reports/sphinx/`.
+
+## Documentation layout
+
+| Path | Ownership | Purpose |
+| --- | --- | --- |
+| `docs/README.md` | Authored | This contributor guide. It is repository-facing by default and can be included in the Sphinx site through a source wrapper page. |
+| `docs/source/index.md` | Authored | Root page and main Sphinx `toctree`. Add top-level pages here. |
+| `docs/source/readme.md` | Authored | Includes the root project `README.md` so the project overview and usage have one source of truth. |
+| `docs/source/command-reference.md` | Template-rendered | Project-specific command contract containing only the tasks enabled by the selected Copier options. |
+| `docs/source/api.rst` | Authored | Root Autosummary declaration for the `{{ package_name }}` package. |
+| `docs/source/conf.py` | Authored | Sphinx extensions, theme, coverage policy, notebook policy, and optional feature configuration. |
+| `docs/source/_templates/autosummary/` | Authored | Templates controlling generated module and class API pages. |
+| `docs/source/_autosummary/` | Generated | Autosummary API pages. Do not edit or commit them. |
+{% if use_example_gallery %}| `examples/` | Authored | Executable Sphinx-Gallery source scripts and the gallery landing-page header. |
+| `docs/source/auto_examples/` | Generated | Rendered gallery source pages, notebooks, archives, and images. Do not edit or commit them. |
+| `docs/source/sg_execution_times.rst` | Generated | Sphinx-Gallery execution-time page. Do not edit or commit it. |
+{% endif %}{% if use_notebooks %}| `docs/source/notebooks/` | Authored | Notebooks published as documentation and their index page. |
+| `notebooks/` | Authored | Exploratory notebooks. These are validated and stripped, but are not automatically published. |
+{% endif %}{% if use_uml %}| `docs/source/diagrams/index.rst` | Authored | Sphinx page embedding generated Mermaid diagrams. |
+| `docs/source/diagrams/*.mmd` | Generated | Mermaid sources produced from the installed package by Pyreverse. Do not edit or commit them. |
+{% endif %}| `reports/sphinx/html/` | Generated | Rendered HTML documentation. |
+| `reports/sphinx/coverage/` | Generated | Raw and browser-readable API documentation coverage reports. |
+
+Generated source-side artefacts and rendered output are ignored by Git and removed by the documentation clean target.
+
+## How the build works
+
+`tox.ini` calls:
+
+```ini
+python scripts/build_docs.py {posargs:all}
+```
+
+The policy script performs the following work:
+
+1. Selects `all`, `html`, `coverage`, or `clean` from the Tox positional argument.
+{% if use_uml %}2. Generates Mermaid UML sources before Sphinx runs.
+3. Runs each selected Sphinx builder with a separate doctree directory.
+4. Sets `PROJECT_DOCS_BUILDER` so `conf.py` can omit notebooks, diagrams, and gallery execution from the API coverage build.
+5. Treats Sphinx warnings as build failures while continuing far enough to report multiple documentation problems.
+6. Converts the Sphinx Python coverage report into `reports/sphinx/coverage/index.html` and fails when public functions or classes are undocumented or modules fail to import.
+7. On `clean`, removes rendered output and generated Autosummary, gallery, and Mermaid files.
+{% else %}2. Runs each selected Sphinx builder with a separate doctree directory.
+3. Sets `PROJECT_DOCS_BUILDER` so `conf.py` can omit optional presentation-oriented sources from the API coverage build.
+4. Treats Sphinx warnings as build failures while continuing far enough to report multiple documentation problems.
+5. Converts the Sphinx Python coverage report into `reports/sphinx/coverage/index.html` and fails when public functions or classes are undocumented or modules fail to import.
+6. On `clean`, removes rendered output and generated Autosummary files.
+{% endif %}
+The `Makefile` and `make.bat` wrappers call the same script. They are convenience entry points; Tox remains the normal developer and CI interface.
+
+## Add a Markdown page
+
+Human-authored narrative pages should normally use MyST Markdown. Create a file under `docs/source/`, for example `docs/source/methodology.md`:
+
+````markdown
+(methodology)=
+# Methodology
+
+Describe the design, experiment, data pipeline, or operational procedure here.
+
+```{note}
+MyST directives provide Sphinx features inside Markdown.
+```
+
+See the {doc}`API reference <api>` for implementation details.
+````
+
+Add the page stem, without `.md`, to the `toctree` in `docs/source/index.md`:
+
+````markdown
+```{toctree}
+:maxdepth: 2
+:caption: Contents
+
+readme
+methodology
+api
+```
+````
+
+Then build the HTML site:
+
+```bash
+uv run --locked tox run -e docs -- html
+```
+
+The fully enabled data-science example follows this pattern with `docs/source/data-science-example.md` and adds `data-science-example` to the root `toctree`.
+
+## Publish this contributor guide
+
+The full data-science example publishes this repository guide without duplicating it. Its `docs/source/documentation-guide.md` wrapper contains:
+
+````markdown
+```{include} ../README.md
+```
+````
+
+The wrapper is added to the root `toctree` as `documentation-guide`. This keeps `docs/README.md` as the single authored source while making the same material available in the generated HTML site. Other projects can adopt the same pattern when contributor documentation should be public.
+
+## Add a reStructuredText page
+
+Sphinx supports MyST Markdown and reStructuredText in the same source tree. ReStructuredText remains useful for extension-oriented index pages. For example:
+
+```rst
+Operations
+==========
+
+.. toctree::
+   :maxdepth: 1
+
+   deployment
+   monitoring
+```
+
+Add the page stem to an existing `toctree` in the same way as a Markdown page. Prefer MyST Markdown for prose unless a Sphinx extension is clearer in reStructuredText.
+
+## Document the Python API
+
+The root API page recursively documents the installed package:
+
+```rst
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
+
+   {{ package_name }}
+```
+
+To add API documentation:
+
+1. Add or update public modules, functions, classes, and methods under `src/{{ package_name }}/`.
+2. Give public objects complete **{{ "Google" if docstring_style == "google" else "NumPy" }}-style** docstrings.
+3. Run static validation so the docstrings are formatted and linted:
+
+   ```bash
+   uv run --locked tox run -e lint
+   ```
+
+4. Run the API coverage target:
+
+   ```bash
+   uv run --locked tox run -e docs -- coverage
+   ```
+
+5. Inspect `reports/sphinx/coverage/index.html` or the raw `reports/sphinx/coverage/python.txt` when the target fails.
+
+Autosummary writes generated pages under `docs/source/_autosummary/`. Change `docs/source/_templates/autosummary/module.rst` or `class.rst` when the generated API layout needs to change; do not edit generated pages directly.
+
+The documentation build imports the installed package. Keep import-time code lightweight and protect executable entry points with:
+
+```python
+if __name__ == "__main__":
+    main()
+```
+
+{% if use_example_gallery -%}
+## Add a Sphinx-Gallery example
+
+Sphinx-Gallery converts Python scripts under `examples/` into executable narrative pages. The fully enabled data-science example contains `examples/plot_quadratic.py`:
+
+```python
+"""Plot a quadratic function
+=========================
+
+This example demonstrates how Sphinx Gallery executes Python scripts and captures
+its figures in the generated documentation.
+"""  # no-format-docstring
+
+import matplotlib.pyplot as plt
+
+from {{ package_name }}.main import hello
+
+message = hello("Sphinx Gallery")
+
+x_values = list(range(-5, 6))
+y_values = [value**2 for value in x_values]
+
+figure, axis = plt.subplots()
+axis.plot(x_values, y_values)
+axis.set(xlabel="x", ylabel="x²", title=f"{message}: quadratic function")
+figure.tight_layout()
+```
+
+To add another executable example:
+
+1. Create `examples/plot_<topic>.py`. The current `filename_pattern` selects paths containing `plot_` for execution.
+2. Start the file with a module docstring containing a reStructuredText title and explanatory prose. Sphinx-Gallery uses this as the page introduction.
+3. Import the installed `{{ package_name }}` package rather than modifying `sys.path` or copying implementation code into the example.
+4. Use ordinary Python comments or Sphinx-Gallery section separators to explain intermediate steps.
+5. Produce figures with Matplotlib when visual output is useful.
+6. Build the HTML documentation:
+
+   ```bash
+   uv run --locked tox run -e docs -- html
+   ```
+
+7. Inspect the result under `reports/sphinx/html/auto_examples/`.
+
+`examples/GALLERY_HEADER.rst` controls the gallery landing-page introduction. Generated gallery files under `docs/source/auto_examples/` are ignored and cleaned automatically.
+
+{% endif -%}
+{% if use_notebooks -%}
+## Add a documentation notebook
+
+There are two notebook locations with different policies:
+
+- `notebooks/` contains exploratory notebooks. The notebook Tox environment checks that their removable outputs and volatile metadata have been stripped.
+- `docs/source/notebooks/` contains notebooks intended for publication. They are parsed by MyST-NB and are not automatically stripped.
+
+To publish a notebook:
+
+1. Create or copy the notebook into `docs/source/notebooks/`, for example `docs/source/notebooks/model-evaluation.ipynb`.
+2. Ensure its kernel metadata refers to an available Python kernel.
+3. Add its stem to `docs/source/notebooks/index.rst`:
+
+   ```rst
+   Notebook gallery
+   ================
+
+   .. toctree::
+      :maxdepth: 1
+
+      example
+      model-evaluation
+   ```
+
+4. Run notebook validation:
+
+   ```bash
+   uv run --locked tox run -e notebooks
+   ```
+
+5. Build the documentation:
+
+   ```bash
+   uv run --locked tox run -e docs -- html
+   ```
+
+The template sets `nb_execution_mode = "off"`. Sphinx does not execute documentation notebooks during the build; it renders the source and any outputs already stored in the notebook. Execute and review a documentation notebook before committing when published outputs are required. Keep exploratory outputs out of `notebooks/` unless a cell is explicitly marked to retain them according to the project README.
+
+{% endif -%}
+{% if use_uml -%}
+## Update UML diagrams
+
+The documentation build generates package and class diagrams from the installed `{{ package_name }}` package:
+
+```bash
+uv run --locked tox run -e uml
+```
+
+The complete documentation target also runs UML generation automatically. `scripts/generate_uml.py` invokes Pyreverse and writes Mermaid sources under `docs/source/diagrams/`; `docs/source/diagrams/index.rst` embeds those files through `sphinxcontrib-mermaid`.
+
+Do not edit generated `.mmd` files. Change the Python package structure or `scripts/generate_uml.py`, then regenerate them. Edit `docs/source/diagrams/index.rst` only when changing captions, ordering, or surrounding explanatory text.
+
+{% endif -%}
+## Update the root README page
+
+`docs/source/readme.md` includes the repository root `README.md`:
+
+````markdown
+```{include} ../../README.md
+:start-after: "# {{ project_name }}"
+:relative-docs: docs/
+:relative-images:
+```
+````
+
+Edit the root `README.md` for the public project overview, installation, usage, and project links. Put daily repository work in `CONTRIBUTING.md`, maintainer-only operations in `MAINTAINING.md`, and documentation authoring in this guide. The included documentation page updates on the next Sphinx build.
+
+## Generated output and cleanup
+
+A successful complete build writes:
+
+- `reports/sphinx/html/index.html`: published HTML entry point.
+- `reports/sphinx/coverage/index.html`: browser-readable API documentation coverage.
+- `reports/sphinx/coverage/python.txt`: raw API coverage report.
+- `reports/sphinx/.doctrees/`: isolated Sphinx state for each builder.
+
+Remove all documentation build output and source-side generated artefacts with:
+
+```bash
+uv run --locked tox run -e docs -- clean
+```
+
+Use the project-wide clean environment when also removing test reports and distribution artefacts:
+
+```bash
+uv run --locked tox run -e clean
+```
+
+## Troubleshooting
+
+### A warning fails the build
+
+This is intentional. The build uses `--fail-on-warning`, so broken references, malformed directives, missing documents, duplicate labels, and similar warnings are CI failures. Read the first warning in the Sphinx output, correct the source, and rerun the same target.
+
+### A module fails to import
+
+Sphinx documents the installed wheel, not an ad-hoc `src/` path. Confirm that the package builds and imports in the documentation environment, avoid undeclared optional imports at module import time, and run:
+
+```bash
+uv run --locked tox run -e package-check
+uv run --locked tox run -e docs -- coverage
+```
+
+### API coverage is incomplete
+
+Open `reports/sphinx/coverage/index.html`. Add docstrings to the listed public objects, expose the intended object through the package structure, or explicitly adjust the coverage policy in `docs/source/conf.py` when an object is intentionally excluded.
+
+{% if use_example_gallery -%}
+### A gallery example fails
+
+Run the example directly in the synchronised documentation environment:
+
+```bash
+uv run --locked --group docs python examples/plot_quadratic.py
+```
+
+Then rerun `uv run --locked tox run -e docs -- html`. Remember that the gallery executes selected scripts in a documentation build context and captures their figures and standard output.
+
+{% endif -%}
+{% if use_notebooks -%}
+### A notebook page has stale or missing output
+
+The documentation build does not execute notebooks. Open the notebook with JupyterLab, execute it deliberately, review the stored output, save it under `docs/source/notebooks/`, and rebuild:
+
+```bash
+uv run --group notebooks jupyter lab
+uv run --locked tox run -e docs -- html
+```
+
+{% endif -%}
+## Official documentation
+
+- [Sphinx](https://www.sphinx-doc.org/en/master/)
+- [MyST Parser](https://myst-parser.readthedocs.io/)
+- [Sphinx autodoc](https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html)
+- [Sphinx Autosummary](https://www.sphinx-doc.org/en/master/usage/extensions/autosummary.html)
+- [Sphinx coverage builder](https://www.sphinx-doc.org/en/master/usage/extensions/coverage.html)
+- [Sphinx duration extension](https://www.sphinx-doc.org/en/master/usage/extensions/duration.html)
+- [Furo theme](https://furo.readthedocs.io/)
+{% if use_notebooks %}- [MyST-NB](https://myst-nb.readthedocs.io/)
+{% endif -%}
+{% if use_example_gallery %}- [Sphinx-Gallery](https://sphinx-gallery.github.io/)
+{% endif -%}
+{% if use_uml %}- [Pyreverse](https://pylint.pycqa.org/en/stable/additional_tools/pyreverse/index.html)
+- [`sphinxcontrib-mermaid`](https://github.com/mgaitan/sphinxcontrib-mermaid)
+- [Mermaid](https://mermaid.js.org/intro/)
+{% endif -%}
