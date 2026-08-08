@@ -222,7 +222,7 @@ def test_template_ci_builds_docs_and_pages_publishes_the_same_output() -> None:
         assert command_part in pages_workflow
 
     for action in (
-        "actions/configure-pages@v5",
+        "actions/configure-pages@v6",
         "actions/upload-pages-artifact@v5",
         "actions/deploy-pages@v5",
     ):
