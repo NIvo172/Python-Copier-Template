@@ -27,7 +27,7 @@ uv run --locked tox
 From a tagged remote template:
 
 ```bash
-uvx copier copy gh:YOUR_ACCOUNT/python-project-template my-project
+uvx copier copy --vcs-ref HEAD gh:NIvo172/Python-Copier-Template my-project
 uv run my-project/scripts/init_project.py \
   --git-name "Your Name" \
   --git-email "you@example.com"
