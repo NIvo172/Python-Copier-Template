@@ -1,0 +1,55 @@
+dependency_groups:
+  dev:
+  - pytest-sugar
+  - tox
+  - tox-uv
+  lint:
+  - format-docstring
+  - mypy
+  - pytest
+  - ruff
+  package-check:
+  - check-wheel-contents
+  - twine
+  test:
+  - pytest
+  - pytest-cov
+  - pytest-html
+  - pytest-mock
+  - pytest-reportlog
+  - pytest-xdist
+per_file_ignores_keys:
+- docs/source/conf.py
+- scripts/**/*.py
+- src/**/main.py
+- tests/**/*.py
+precommit_hooks: {}
+ruff_select:
+- ANN
+- B
+- C4
+- D
+- DTZ
+- E4
+- E7
+- E9
+- F
+- G
+- I
+- LOG
+- PTH
+- RUF
+- S
+- SIM
+- T20
+- UP
+tox_environments:
+- build
+- clean
+- lint
+- lock
+- package-check
+- py311
+- py312
+- py313
+- py314

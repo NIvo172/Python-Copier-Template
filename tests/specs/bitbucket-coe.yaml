@@ -1,0 +1,96 @@
+dependency_groups:
+  dev:
+  - pytest-sugar
+  - tox
+  - tox-uv
+  docs:
+  - furo
+  - myst-parser
+  - sphinx
+  - sphinx-copybutton
+  - sphinx-inline-tabs
+  lint:
+  - format-docstring
+  - mypy
+  - pre-commit
+  - pytest
+  - ruff
+  package-check:
+  - check-wheel-contents
+  - twine
+  test:
+  - pytest
+  - pytest-cov
+  - pytest-html
+  - pytest-mock
+  - pytest-reportlog
+  - pytest-xdist
+per_file_ignores_keys:
+- docs/source/conf.py
+- scripts/**/*.py
+- src/**/main.py
+- tests/**/*.py
+precommit_hooks:
+  default:
+  - check-added-large-files
+  - check-case-conflict
+  - check-illegal-windows-names
+  - check-json
+  - check-merge-conflict
+  - check-toml
+  - check-yaml
+  - debug-statements
+  - detect-private-key
+  - end-of-file-fixer
+  - format-docstring
+  - mixed-line-ending
+  - name-tests-test
+  - ruff-check
+  - ruff-format
+  - trailing-whitespace
+  manual:
+  - check-added-large-files
+  - check-case-conflict
+  - check-illegal-windows-names
+  - check-json
+  - check-merge-conflict
+  - check-toml
+  - check-yaml
+  - debug-statements
+  - detect-private-key
+  - end-of-file-fixer
+  - mixed-line-ending
+  - name-tests-test
+  - trailing-whitespace
+ruff_select:
+- ANN
+- B
+- C4
+- D
+- DTZ
+- E4
+- E7
+- E9
+- F
+- G
+- I
+- LOG
+- PTH
+- RUF
+- S
+- SIM
+- T20
+- UP
+tox_environments:
+- build
+- clean
+- docs
+- lint
+- lock
+- package-check
+- pre-commit
+- py311
+- py312
+- py313
+- py314
+- repo-checks
