@@ -4,12 +4,17 @@ repos:
     hooks:
       - id: check-added-large-files
       - id: check-case-conflict
+      - id: check-illegal-windows-names
       - id: check-json
       - id: check-merge-conflict
         args: [--assume-in-merge]
       - id: check-toml
       - id: check-yaml
+      - id: debug-statements
+      - id: detect-private-key
       - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: name-tests-test
       - id: trailing-whitespace
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

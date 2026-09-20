@@ -155,14 +155,20 @@ uv run --locked --group docs sphinx-build \
 
 The tests render combinations covering both build backends, all project kinds, optional feature removal, both docstring conventions, and every CI provider. Documentation contracts also validate guide navigation, local links and anchors, rendered commands, scripts, includes, Sphinx toctrees, and the publication workflow. Pull requests build the template manual with warnings treated as errors; pushes to `main` can publish the same output through GitHub Pages.
 
-Generated-project integration checks are opt-in:
+The standard suite already builds rendered distributions as part of its default run. To iterate faster, skip the slower build tier, or run only that tier, with:
 
 ```bash
-RUN_GENERATED_BUILDS=1 uv run pytest
-RUN_NORMAL_PROJECT=1 uv run pytest tests/test_generated_projects.py -k normal_project_complete_lifecycle
+uv run pytest -m "not slow"   # structural contracts only
+uv run pytest -m slow         # rendered-project build checks only
 ```
 
-The standard suite renders representative configurations and checks their files and contracts. The opt-in normal-project lifecycle runs the generated initialisation script and the separate Tox validation command. Exhaustive all-features validation belongs to the companion showcase repository, keeping this template package focused on rendering and update behavior.
+The full normal-project lifecycle stays opt-in; it bootstraps a real Git repository, runs the generated initialisation script, and then a complete Tox pass:
+
+```bash
+RUN_NORMAL_PROJECT=1 uv run pytest -m slow -k normal_project_complete_lifecycle
+```
+
+Exhaustive all-features validation belongs to the companion showcase repository, keeping this template package focused on rendering and update behavior.
 
 ## Source map
 

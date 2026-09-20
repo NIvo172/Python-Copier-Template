@@ -123,16 +123,17 @@ Structural tests render:
 - the README/contributor/maintainer document boundaries; and
 - the template Sphinx navigation and GitHub Pages publication contract.
 
-`RUN_GENERATED_BUILDS=1` enables generated distribution builds:
+Rendered-project distribution builds run by default as the `slow` tier. Iterate faster by skipping that tier, or run only it, with:
 
 ```bash
-RUN_GENERATED_BUILDS=1 uv run pytest
+uv run pytest -m "not slow"
+uv run pytest -m slow
 ```
 
 The standard suite also renders representative option combinations and checks generated contracts. Run the normal-project integration lifecycle explicitly when changing initialisation, tests, reports, or tag behavior:
 
 ```bash
-RUN_NORMAL_PROJECT=1 uv run pytest tests/test_generated_projects.py -k normal_project_complete_lifecycle
+RUN_NORMAL_PROJECT=1 uv run pytest -m slow -k normal_project_complete_lifecycle
 ```
 
 This lifecycle uses the active template-development Python minor version, enables documentation, notebooks, DVC, UML, the example gallery, pre-commit, and VS Code support, and selects no hosted CI provider. It runs `scripts/init_project.py`, then the complete default Tox suite as a separate command, and checks tagging and final repository cleanliness.

@@ -16,20 +16,8 @@ MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 NON_SLUG_CHARACTER = re.compile(r"[^\w\- ]")
 MARKDOWN_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
-REQUIRED_GUIDES = (
-    "index.md",
-    "README.md",
-    "getting-started.md",
-    "template-options.md",
-    "architecture.md",
-    "command-reference.md",
-    "ci-and-collaboration.md",
-    "data-science.md",
-    "maintenance.md",
-    "updates-and-releases.md",
-    "publishing.md",
-    "troubleshooting.md",
-)
+REQUIRED_GUIDES = tuple(sorted(path.name for path in DOCS.glob("*.md")))
+assert REQUIRED_GUIDES, "docs/ must contain at least one Markdown guide"
 
 
 def documentation_files() -> list[Path]:

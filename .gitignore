@@ -7,4 +7,6 @@ __pycache__/
 *.py[cod]
 .generated/
 dist/
-reports/sphinx/
+reports/
+.coverage
+.coverage.*

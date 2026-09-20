@@ -25,7 +25,12 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv sync --locked --group docs
-      - run: uv run --locked pytest
+      - name: Run template tests (with coverage gate)
+        env:
+          # CI runs the full slow tier, including the one-time normal-project
+          # lifecycle (it bootstraps a real repo and runs the generated Tox suite).
+          RUN_NORMAL_PROJECT: "1"
+        run: uv run --locked pytest --cov-fail-under=80
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
       - name: Build template documentation
