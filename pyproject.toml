@@ -25,8 +25,11 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-config --strict-markers"
+addopts = "-ra --strict-config --strict-markers --cov=tests --cov-report=term-missing"
 testpaths = ["tests"]
+markers = [
+    "slow: builds the rendered project end-to-end or runs a full Copier lifecycle (deselect with '-m \"not slow\"')",
+]
 
 [tool.ruff]
 line-length = 121

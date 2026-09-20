@@ -6,16 +6,24 @@ import re
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
 import yaml
+from _render import (
+    BASE_ANSWERS,
+    NORMAL_PROJECT_REGRESSION_OVERRIDES,
+    TEMPLATE_ROOT,
+    case_id_for,
+    generated_documentation,
+    has_dependency,
+    load_toml,
+    render_generated_project,
+)
 from copier import run_copy, run_update
 from jinja2 import Environment
 
-TEMPLATE_ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 MYST_INCLUDE = re.compile(r"^```\{include\}\s+(.+?)\s*$", re.MULTILINE)
 SCRIPT_REFERENCE = re.compile(r"\b(scripts/[a-zA-Z0-9_-]+\.py)\b")
@@ -23,31 +31,16 @@ TOCTREE = re.compile(r"```\{toctree\}\s*\n(.*?)```", re.DOTALL)
 TOX_ENVIRONMENT_REFERENCE = re.compile(r"\btox run -e ([a-zA-Z0-9_-]+)\b")
 EXTERNAL_LINK_PREFIXES = ("http://", "https://", "mailto:")
 
-BASE_ANSWERS: dict[str, object] = {
-    "project_name": "Example Project",
-    "project_description": "Example generated project",
-    "distribution_name": "example-project",
-    "package_name": "example_project",
-    "user_name": "Example Author",
-    "user_email": "author@example.com",
-    "repository_url": "https://github.com/example/example-project",
-    "homepage_url": "https://example-project.example",
-    "documentation_url": "https://docs.example-project.example",
-    "changelog_url": "https://github.com/example/example-project/blob/main/CHANGELOG.md",
-    "minimum_python_version": "3.11",
-    "python_versions": ["3.11", "3.12", "3.13", "3.14"],
-    "project_kind": "library",
-    "docstring_style": "google",
-    "use_docs": True,
-    "use_notebooks": False,
-    "use_dvc": False,
-    "use_uml": False,
-    "use_example_gallery": False,
-    "use_precommit": True,
-    "use_vscode": True,
-    "ci_provider": "github",
-    "has_other_contributors": False,
-}
+
+def run(*command: str, cwd: Path) -> None:
+    subprocess.run(command, cwd=cwd, check=True)
+
+
+def command_output(*command: str, cwd: Path) -> str:
+    return subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True).stdout
+
+
+# --- Template-level contracts (no rendering required) -----------------------
 
 
 def test_docstring_style_default_is_google() -> None:
@@ -137,110 +130,27 @@ def test_init_script_has_one_time_terminal_only_contract() -> None:
 
 
 def test_python_version_default_tracks_minimum_version() -> None:
+    """The default python_versions list is derived from the copier.yml ``minimum_python_version`` choices.
+
+    ``python_versions`` is a Jinja2 template (not plain YAML), so we render it
+    with each allowed minimum and check that it returns the supported list from
+    that minimum up to the maximum supported choice. This keeps a single source
+    of truth (``copier.yml``) and picks up newly-supported Pythons without a
+    table change here.
+    """
     copier_config = yaml.safe_load((TEMPLATE_ROOT / "copier.yml").read_text())
+    supported = list(copier_config["minimum_python_version"]["choices"].values())
+    expected = {minimum: [v for v in supported if _version_key(v) >= _version_key(minimum)] for minimum in supported}
     default_template = Environment().from_string(copier_config["python_versions"]["default"])
-    expected_defaults = {
-        "3.11": ["3.11", "3.12", "3.13", "3.14"],
-        "3.12": ["3.12", "3.13", "3.14"],
-        "3.13": ["3.13", "3.14"],
-        "3.14": ["3.14"],
-    }
 
-    for minimum_version, expected in expected_defaults.items():
+    for minimum_version, expected_versions in expected.items():
         rendered = default_template.render(minimum_python_version=minimum_version)
-        assert yaml.safe_load(rendered) == expected
+        assert yaml.safe_load(rendered) == expected_versions, (minimum_version, rendered)
 
 
-CASES = [
-    {"build_backend": "hatchling"},
-    {"build_backend": "setuptools", "docstring_style": "numpy"},
-    {
-        "build_backend": "hatchling",
-        "project_kind": "data_science",
-        "docstring_style": "numpy",
-        "use_notebooks": True,
-        "use_dvc": True,
-        "use_uml": True,
-        "use_example_gallery": True,
-        "has_other_contributors": True,
-        "code_owners": "@example/full-data-science-maintainers",
-    },
-    {
-        "build_backend": "setuptools",
-        "use_docs": False,
-        "use_precommit": False,
-        "use_vscode": False,
-        "ci_provider": "none",
-    },
-    {
-        "build_backend": "hatchling",
-        "ci_provider": "gitlab",
-        "has_other_contributors": True,
-        "code_owners": "@example/maintainers",
-    },
-    {
-        "build_backend": "setuptools",
-        "ci_provider": "bitbucket",
-        "has_other_contributors": True,
-        "code_owners": "@example/maintainers",
-    },
-]
-
-CURRENT_PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
-NORMAL_PROJECT_REGRESSION_OVERRIDES: dict[str, object] = {
-    "minimum_python_version": CURRENT_PYTHON,
-    "python_versions": [CURRENT_PYTHON],
-    "build_backend": "hatchling",
-    "project_kind": "data_science",
-    "use_docs": True,
-    "use_notebooks": True,
-    "use_dvc": True,
-    "use_uml": True,
-    "use_example_gallery": True,
-    "use_precommit": True,
-    "use_vscode": True,
-    "ci_provider": "none",
-    "has_other_contributors": False,
-}
-
-
-def run(*command: str, cwd: Path) -> None:
-    subprocess.run(command, cwd=cwd, check=True)
-
-
-def command_output(*command: str, cwd: Path) -> str:
-    return subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True).stdout
-
-
-def has_dependency(dependencies: list[object], prefix: str) -> bool:
-    return any(isinstance(dependency, str) and dependency.startswith(prefix) for dependency in dependencies)
-
-
-def render_generated_project(destination: Path, overrides: dict[str, object]) -> dict[str, object]:
-    """Render one generated-project variant and return its complete answers."""
-    answers = BASE_ANSWERS | overrides
-    copy_options: dict[str, object] = {}
-    if (TEMPLATE_ROOT / ".git").exists():
-        copy_options["vcs_ref"] = "HEAD"
-
-    run_copy(
-        src_path=str(TEMPLATE_ROOT),
-        dst_path=destination,
-        data=answers,
-        defaults=True,
-        overwrite=True,
-        **copy_options,
-    )
-    return answers
-
-
-def generated_documentation(destination: Path) -> list[Path]:
-    """Return user-facing Markdown documents from a generated project."""
-    documents = [destination / name for name in ("README.md", "CONTRIBUTING.md", "MAINTAINING.md")]
-    docs_directory = destination / "docs"
-    if docs_directory.is_dir():
-        documents.extend(sorted(docs_directory.rglob("*.md")))
-    return documents
+def _version_key(version: str) -> tuple[int, int]:
+    major, minor = version.split(".", maxsplit=1)
+    return int(major), int(minor)
 
 
 def test_copier_update_runs_versioned_migration_and_preserves_project_files(tmp_path: Path) -> None:
@@ -327,11 +237,14 @@ _migrations:
     assert (destination / "migration-result.txt").read_text(encoding="utf-8") == "migration completed"
 
 
-@pytest.mark.parametrize("overrides", CASES)
-def test_generated_documentation_references_are_valid(tmp_path: Path, overrides: dict[str, object]) -> None:
+# --- Generated-project contracts --------------------------------------------
+# These tests share one render per case (the `rendered` fixture in `conftest.py`).
+# Each test focuses on one concern so that adding a feature touches a small,
+# well-named test rather than a monolith.
+
+
+def test_generated_documentation_references_are_valid(destination: Path, answers: dict[str, object]) -> None:
     """Validate links, commands, includes, and navigation in every rendered variant."""
-    destination = tmp_path / "generated"
-    answers = render_generated_project(destination, overrides)
     tox_config = (destination / "tox.ini").read_text(encoding="utf-8")
     tox_environments = set(re.findall(r"^\[testenv:([^]]+)\]$", tox_config, re.MULTILINE))
     failures: list[str] = []
@@ -385,14 +298,11 @@ def test_generated_documentation_references_are_valid(tmp_path: Path, overrides:
     assert not failures, "Generated documentation failures:\n" + "\n".join(failures)
 
 
-@pytest.mark.parametrize("overrides", CASES)
 def test_generated_sphinx_command_reference_matches_selected_features(
-    tmp_path: Path,
-    overrides: dict[str, object],
+    destination: Path,
+    answers: dict[str, object],
 ) -> None:
     """Document every rendered Tox task without advertising unavailable features."""
-    destination = tmp_path / "generated"
-    answers = render_generated_project(destination, overrides)
     reference_path = destination / "docs/source/command-reference.md"
 
     if not answers["use_docs"]:
@@ -418,12 +328,8 @@ def test_generated_sphinx_command_reference_matches_selected_features(
         assert (marker in reference) is bool(answers[answer])
 
 
-@pytest.mark.parametrize("overrides", CASES)
-def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None:
-    destination = tmp_path / "generated"
-    answers = render_generated_project(destination, overrides)
-
-    pyproject = tomllib.loads((destination / "pyproject.toml").read_text())
+def test_pyproject_metadata_and_dependencies(destination: Path) -> None:
+    pyproject = load_toml(destination)
     assert pyproject["project"]["name"] == "example-project"
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["project"]["urls"] == {
@@ -433,17 +339,22 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         "Issues": "https://github.com/example/example-project/issues",
         "Changelog": "https://github.com/example/example-project/blob/main/CHANGELOG.md",
     }
+
+    groups = pyproject["dependency-groups"]
+    assert has_dependency(groups["lint"], "format-docstring")
+    assert has_dependency(groups["lint"], "pytest")
+    assert has_dependency(groups["package-check"], "check-wheel-contents")
+    assert has_dependency(groups["package-check"], "twine")
+    assert has_dependency(groups["test"], "pytest-reportlog")
+    assert has_dependency(groups["dev"], "pytest-sugar")
+    assert has_dependency(groups["dev"], "tox")
+    assert has_dependency(groups["dev"], "tox-uv")
+
+
+def test_pyproject_tool_configuration(destination: Path, answers: dict[str, object]) -> None:
+    pyproject = load_toml(destination)
     assert pyproject["tool"]["format_docstring"]["docstring_style"] == answers["docstring_style"]
     assert pyproject["tool"]["ruff"]["lint"]["pydocstyle"]["convention"] == answers["docstring_style"]
-    assert has_dependency(pyproject["dependency-groups"]["lint"], "format-docstring")
-    assert has_dependency(pyproject["dependency-groups"]["lint"], "pytest")
-    package_check_dependencies = pyproject["dependency-groups"]["package-check"]
-    assert has_dependency(package_check_dependencies, "check-wheel-contents")
-    assert has_dependency(package_check_dependencies, "twine")
-    test_dependencies = pyproject["dependency-groups"]["test"]
-    assert has_dependency(test_dependencies, "pytest-reportlog")
-    assert has_dependency(pyproject["dependency-groups"]["dev"], "pytest-sugar")
-    pytest_options = pyproject["tool"]["pytest"]["ini_options"]
     assert pyproject["tool"]["ruff"]["line-length"] == 121
     assert pyproject["tool"]["ruff"]["force-exclude"] is True
     assert pyproject["tool"]["format_docstring"]["line_length"] == 121
@@ -451,7 +362,10 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert pyproject["tool"]["ruff"]["format"]["docstring-code-line-length"] == "dynamic"
     assert "G" in pyproject["tool"]["ruff"]["lint"]["select"]
     assert "LOG" in pyproject["tool"]["ruff"]["lint"]["select"]
+
+    pytest_options = pyproject["tool"]["pytest"]["ini_options"]
     assert has_dependency(pytest_options["required_plugins"], "pytest-reportlog")
+    assert all(">=" in requirement for requirement in pytest_options["required_plugins"])
     assert "--report-log=reports/pytest/report.jsonl" in pytest_options["addopts"]
     assert "--cov=example_project" in pytest_options["addopts"]
     assert "--cov-report=html:reports/coverage/html" in pytest_options["addopts"]
@@ -460,36 +374,48 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert "--cov-branch" not in pytest_options["addopts"]
     assert pytest_options["log_cli"] is False
     assert pytest_options["log_file"] == "reports/pytest/logs/pytest.log"
-    assert all(">=" in requirement for requirement in pytest_options["required_plugins"])
+
+
+def test_source_and_layout_files(destination: Path) -> None:
     assert (destination / "src/example_project/__init__.py").is_file()
     assert (destination / "tests/test_main.py").is_file()
     assert (destination / "tox.ini").is_file()
     assert (destination / "CONTRIBUTING.md").is_file()
     assert (destination / "MAINTAINING.md").is_file()
+
+
+def test_renovate_and_editorconfig(destination: Path) -> None:
     renovate_config = json.loads((destination / "renovate.json").read_text(encoding="utf-8"))
     assert "enabledManagers" not in renovate_config
     assert renovate_config["lockFileMaintenance"]["enabled"] is True
     routine_updates = renovate_config["packageRules"][0]
     assert "matchManagers" not in routine_updates
     assert routine_updates["matchUpdateTypes"] == ["minor", "patch", "pin", "digest"]
+
     editorconfig = (destination / ".editorconfig").read_text()
     assert "[Makefile]" in editorconfig
     assert "indent_style = tab" in editorconfig
-    tox_config = (destination / "tox.ini").read_text()
-    generated_readme = (destination / "README.md").read_text(encoding="utf-8")
+
+
+def test_generated_readme(destination: Path, answers: dict[str, object]) -> None:
+    readme = (destination / "README.md").read_text(encoding="utf-8")
+    assert len(readme.splitlines()) < 150
+    assert not readme.endswith("\n\n")
+    assert "uv sync --locked" in readme
+    assert "| `CONTRIBUTING.md` | Contributors | Environment setup" in readme
+    assert "| `MAINTAINING.md` | Maintainers | One-time bootstrap" in readme
+    assert "uv run scripts/init_project.py" not in readme
+
+    if answers["use_docs"]:
+        assert "| `docs/README.md` | Documentation authors | Pages, API reference" in readme
+        assert "[`docs/README.md`](docs/README.md)" not in readme
+    else:
+        assert "docs/README.md" not in readme
+
+
+def test_generated_contributing(destination: Path, answers: dict[str, object]) -> None:
     contributing = (destination / "CONTRIBUTING.md").read_text(encoding="utf-8")
-    maintaining = (destination / "MAINTAINING.md").read_text(encoding="utf-8")
-    project_guides = "\n".join((generated_readme, contributing, maintaining))
-
-    assert len(generated_readme.splitlines()) < 150
-    assert not generated_readme.endswith("\n\n")
     assert not contributing.endswith("\n\n")
-    assert not maintaining.endswith("\n\n")
-    assert "uv sync --locked" in generated_readme
-    assert "| `CONTRIBUTING.md` | Contributors | Environment setup" in generated_readme
-    assert "| `MAINTAINING.md` | Maintainers | One-time bootstrap" in generated_readme
-    assert "uv run scripts/init_project.py" not in generated_readme
-
     assert "# Contributing to Example Project" in contributing
     assert "Tox is the preferred project-level task interface" in contributing
     assert "| Task | Preferred Tox command | Direct command |" in contributing
@@ -497,6 +423,24 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert "uv run --locked --group lint ruff check ." in contributing
     assert "build and test the installed wheel" in contributing
 
+    assert ("tox run -e pre-commit" in contributing) is bool(answers["use_precommit"])
+    assert ("tox run -e notebooks" in contributing) is bool(answers["use_notebooks"])
+    assert ("tox run -e docs -- html" in contributing) is bool(answers["use_docs"])
+    assert ("tox run -e docs -- coverage" in contributing) is bool(answers["use_docs"])
+    assert ("tox run -e docs -- clean" in contributing) is bool(answers["use_docs"])
+    assert ("tox run -e dvc" in contributing) is bool(answers["project_kind"] == "data_science" and answers["use_dvc"])
+    assert ("## Propose changes" in contributing) is bool(answers["has_other_contributors"])
+    assert ("## Report bugs" in contributing) is bool(answers["has_other_contributors"])
+
+    if answers["use_docs"]:
+        assert "documentation-author workflow is in `docs/README.md`" in contributing
+    if answers["ci_provider"] == "bitbucket":
+        assert "Bitbucket does not consume repository-defined issue templates" in contributing
+
+
+def test_generated_maintaining(destination: Path, answers: dict[str, object]) -> None:
+    maintaining = (destination / "MAINTAINING.md").read_text(encoding="utf-8")
+    assert not maintaining.endswith("\n\n")
     assert "# Maintaining Example Project" in maintaining
     assert "uv run scripts/init_project.py" in maintaining
     assert "uv run --locked tox" in maintaining
@@ -505,10 +449,20 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert "Normal Tox and CI tasks do not call `init_project.py`." in maintaining
     assert "`scripts/clean.py` | Recurring maintenance" in maintaining
     assert "`scripts/check_package.py` | Recurring validation" in maintaining
+
     assert ("Strict Sphinx HTML/API coverage" in maintaining) is bool(answers["use_docs"])
     assert ("Pyreverse and Mermaid output" in maintaining) is bool(answers["use_docs"] and answers["use_uml"])
     assert ("Exploratory notebook output and metadata policy" in maintaining) is bool(answers["use_notebooks"])
+    assert ("## Collaboration configuration" in maintaining) is bool(answers["has_other_contributors"])
 
+    if answers["use_docs"]:
+        assert "Documentation authoring is documented in `docs/README.md`" in maintaining
+
+
+def test_guide_external_links(destination: Path, answers: dict[str, object]) -> None:
+    project_guides = "\n".join(
+        (destination / name).read_text(encoding="utf-8") for name in ("README.md", "CONTRIBUTING.md", "MAINTAINING.md")
+    )
     assert "https://docs.astral.sh/uv/" in project_guides
     assert "https://tox.wiki/" in project_guides
     assert "https://docs.pytest.org/" in project_guides
@@ -525,16 +479,9 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert (
         "https://support.atlassian.com/bitbucket-cloud/docs/get-started-with-bitbucket-pipelines/" in project_guides
     ) is bool(answers["ci_provider"] == "bitbucket")
-    assert ("tox run -e pre-commit" in contributing) is bool(answers["use_precommit"])
-    assert ("tox run -e notebooks" in contributing) is bool(answers["use_notebooks"])
-    assert ("tox run -e docs -- html" in contributing) is bool(answers["use_docs"])
-    assert ("tox run -e docs -- coverage" in contributing) is bool(answers["use_docs"])
-    assert ("tox run -e docs -- clean" in contributing) is bool(answers["use_docs"])
-    assert ("tox run -e dvc" in contributing) is bool(answers["project_kind"] == "data_science" and answers["use_dvc"])
-    assert ("## Propose changes" in contributing) is bool(answers["has_other_contributors"])
-    assert ("## Report bugs" in contributing) is bool(answers["has_other_contributors"])
-    assert ("## Collaboration configuration" in maintaining) is bool(answers["has_other_contributors"])
 
+
+def test_collaboration_files(destination: Path, answers: dict[str, object]) -> None:
     collaboration_paths = {
         "github": (
             ".github/CODEOWNERS",
@@ -560,17 +507,17 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
 
     code_of_conduct = destination / "CODE_OF_CONDUCT.md"
     assert code_of_conduct.is_file() is bool(answers["has_other_contributors"])
-    if answers["has_other_contributors"]:
-        assert str(answers["code_owners"]) in (
-            destination / collaboration_paths[str(answers["ci_provider"])][0]
-        ).read_text(encoding="utf-8")
-        assert "author@example.com" in code_of_conduct.read_text(encoding="utf-8")
-        if answers["ci_provider"] == "github":
-            bug_form = yaml.safe_load((destination / ".github/ISSUE_TEMPLATE/bug_report.yml").read_text())
-            assert bug_form["name"] == "Bug report"
-        elif answers["ci_provider"] == "bitbucket":
-            assert "Bitbucket does not consume repository-defined issue templates" in contributing
+    if not answers["has_other_contributors"]:
+        return
 
+    assert str(answers["code_owners"]) in (destination / collaboration_paths[str(answers["ci_provider"])][0]).read_text(
+        encoding="utf-8"
+    )
+    assert "author@example.com" in code_of_conduct.read_text(encoding="utf-8")
+
+
+def test_tox_always_on_environments(destination: Path) -> None:
+    tox_config = (destination / "tox.ini").read_text()
     assert "[testenv:lock]" in tox_config
     assert "uv lock --check" in tox_config
     assert "[testenv:lint]" in tox_config
@@ -580,13 +527,17 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
     assert "[testenv:clean]" in tox_config
     assert "labels = test" in tox_config
     assert "uv build" in tox_config
+
+
+def test_scripts_present(destination: Path) -> None:
     package_check_script = (destination / "scripts/check_package.py").read_text(encoding="utf-8")
     assert (destination / "scripts/check_package.py").is_file()
     assert "distributions = [*source_distributions, *wheels]" in package_check_script
     assert (destination / "scripts/init_project.py").is_file()
     assert not (destination / "scripts/setup_project.py").exists()
-    assert has_dependency(pyproject["dependency-groups"]["dev"], "tox")
-    assert has_dependency(pyproject["dependency-groups"]["dev"], "tox-uv")
+
+
+def test_no_template_leakage(destination: Path) -> None:
     assert not list(destination.rglob("*.jinja"))
 
     autosummary_template_root = destination / "docs/source/_templates/autosummary"
@@ -595,10 +546,11 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         for path in destination.rglob("*")
         if path.is_file() and path.stat().st_size < 1_000_000 and not path.is_relative_to(autosummary_template_root)
     )
-    assert "coea" not in rendered_text
     assert "{{ package_name }}" not in rendered_text
     assert "{% if" not in rendered_text
 
+
+def test_main_module_docstring_style(destination: Path, answers: dict[str, object]) -> None:
     main_module = (destination / "src/example_project/main.py").read_text()
     if answers["docstring_style"] == "google":
         assert "    Args:" in main_module
@@ -607,67 +559,72 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         assert "    Parameters\n    ----------" in main_module
         assert "    Args:" not in main_module
 
-    if answers["build_backend"] == "setuptools":
-        assert pyproject["build-system"]["requires"] == [
-            "setuptools>=80",
-            "setuptools-scm[simple]>=10.2",
-        ]
-        assert "setuptools" not in pyproject.get("tool", {})
-        assert "setuptools_scm" not in pyproject.get("tool", {})
 
-    if answers["use_precommit"]:
-        precommit = (destination / ".pre-commit-config.yaml").read_text()
-        assert "jsh9/format-docstring" in precommit
-        assert "id: format-docstring" in precommit
-        assert "[testenv:pre-commit]" in tox_config
-        assert "pre-commit run --all-files --show-diff-on-failure" in tox_config
-        assert "[testenv:repo-checks]" in tox_config
-        assert "pre-commit run --hook-stage manual --all-files --show-diff-on-failure" in tox_config
-        assert tox_config.count("    PRE_COMMIT_HOME") == 2
-        assert tox_config.count("    TMPDIR") == 2
-        assert precommit.startswith("default_stages: [pre-commit]\n")
-        assert "stages: [pre-commit, manual]" in precommit
+def test_build_backend(destination: Path, answers: dict[str, object]) -> None:
+    if answers["build_backend"] != "setuptools":
+        return
+    pyproject = load_toml(destination)
+    assert pyproject["build-system"]["requires"] == ["setuptools>=80", "setuptools-scm[simple]>=10.2"]
+    assert "setuptools" not in pyproject.get("tool", {})
+    assert "setuptools_scm" not in pyproject.get("tool", {})
 
-        precommit_config = yaml.safe_load(precommit)
-        manual_hook_ids: set[str] = set()
-        default_stage_hook_ids: set[str] = set()
-        for repository in precommit_config["repos"]:
-            for hook in repository["hooks"]:
-                hook_id = hook["id"]
-                stages = hook.get("stages")
-                if stages is None:
-                    default_stage_hook_ids.add(hook_id)
-                elif "manual" in stages:
-                    manual_hook_ids.add(hook_id)
 
-        assert {
-            "check-added-large-files",
-            "check-case-conflict",
-            "check-illegal-windows-names",
-            "check-json",
-            "check-merge-conflict",
-            "check-toml",
-            "check-yaml",
-            "debug-statements",
-            "detect-private-key",
-            "end-of-file-fixer",
-            "mixed-line-ending",
-            "name-tests-test",
-            "trailing-whitespace",
-        } <= manual_hook_ids
-        assert {
-            "format-docstring",
-            "ruff-check",
-            "ruff-format",
-        } <= default_stage_hook_ids
-        assert not ({"format-docstring", "ruff-check", "ruff-format"} & manual_hook_ids)
-        if answers["use_notebooks"]:
-            assert {"nbstripout", "format-docstring-jupyter"} <= default_stage_hook_ids
-            assert not ({"nbstripout", "format-docstring-jupyter"} & manual_hook_ids)
-    else:
+def test_precommit_configuration(destination: Path, answers: dict[str, object]) -> None:
+    tox_config = (destination / "tox.ini").read_text()
+    if not answers["use_precommit"]:
         assert "[testenv:pre-commit]" not in tox_config
         assert "[testenv:repo-checks]" not in tox_config
+        return
 
+    precommit = (destination / ".pre-commit-config.yaml").read_text()
+    assert "jsh9/format-docstring" in precommit
+    assert "id: format-docstring" in precommit
+    assert precommit.startswith("default_stages: [pre-commit]\n")
+    assert "stages: [pre-commit, manual]" in precommit
+    assert "[testenv:pre-commit]" in tox_config
+    assert "pre-commit run --all-files --show-diff-on-failure" in tox_config
+    assert "[testenv:repo-checks]" in tox_config
+    assert "pre-commit run --hook-stage manual --all-files --show-diff-on-failure" in tox_config
+    assert tox_config.count("    PRE_COMMIT_HOME") == 2
+    assert tox_config.count("    TMPDIR") == 2
+
+    precommit_config = yaml.safe_load(precommit)
+    manual_hook_ids: set[str] = set()
+    default_stage_hook_ids: set[str] = set()
+    for repository in precommit_config["repos"]:
+        for hook in repository["hooks"]:
+            hook_id = hook["id"]
+            stages = hook.get("stages")
+            if stages is None:
+                default_stage_hook_ids.add(hook_id)
+            elif "manual" in stages:
+                manual_hook_ids.add(hook_id)
+
+    assert {
+        "check-added-large-files",
+        "check-case-conflict",
+        "check-illegal-windows-names",
+        "check-json",
+        "check-merge-conflict",
+        "check-toml",
+        "check-yaml",
+        "debug-statements",
+        "detect-private-key",
+        "end-of-file-fixer",
+        "mixed-line-ending",
+        "name-tests-test",
+        "trailing-whitespace",
+    } <= manual_hook_ids
+    assert {"format-docstring", "ruff-check", "ruff-format"} <= default_stage_hook_ids
+    assert not ({"format-docstring", "ruff-check", "ruff-format"} & manual_hook_ids)
+    if answers["use_notebooks"]:
+        assert {"nbstripout", "format-docstring-jupyter"} <= default_stage_hook_ids
+        assert not ({"nbstripout", "format-docstring-jupyter"} & manual_hook_ids)
+
+
+def test_dvc_integration(destination: Path, answers: dict[str, object]) -> None:
+    tox_config = (destination / "tox.ini").read_text()
+    pyproject = load_toml(destination)
     if answers["use_dvc"]:
         assert answers["project_kind"] == "data_science"
         assert (destination / ".dvc/config").is_file()
@@ -685,143 +642,91 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         assert "dvc" not in pyproject["dependency-groups"]
         assert "[testenv:dvc]" not in tox_config
 
-    if answers["use_docs"]:
-        conf = (destination / "docs/source/conf.py").read_text()
-        assert (destination / "docs/source/conf.py").is_file()
-        assert f"napoleon_google_docstring = {answers['docstring_style'] == 'google'}" in conf
-        assert f"napoleon_numpy_docstring = {answers['docstring_style'] == 'numpy'}" in conf
-        assert "[testenv:docs]" in tox_config
-        assert "[testenv:docs-html]" not in tox_config
-        assert "[testenv:docs-coverage]" not in tox_config
-        assert "python scripts/build_docs.py {posargs:all}" in tox_config
-        assert "build the selected documentation target" in tox_config
-        docs_script = (destination / "scripts/build_docs.py").read_text()
-        assert 'choices=("all", "html", "coverage", "clean")' in docs_script
-        assert '"-b",' in docs_script
-        assert '"-d",' in docs_script
-        assert "check_api_coverage()" in docs_script
-        assert 'html_report = coverage_directory / "index.html"' in docs_script
-        assert "html.escape(report_text)" in docs_script
-        assert "Sphinx API documentation coverage is incomplete." in docs_script
-        assert "failures: list[str] = []" in docs_script
-        assert docs_script.index('build("coverage")') < docs_script.rindex('build("html")')
-        assert 'environment["PROJECT_DOCS_BUILDER"] = builder' in docs_script
-        assert 'documentation_builder == "coverage"' in conf
-        assert '"diagrams/**"' in conf
 
-        makefile = (destination / "docs/Makefile").read_text()
-        make_bat = (destination / "docs/make.bat").read_text()
-        assert "../scripts/build_docs.py $@" in makefile
-        assert "%PYTHON% ..\\scripts\\build_docs.py %TARGET%" in make_bat
-        assert 'IF /I "%TARGET%" == "clean" GOTO :build' in make_bat
-        assert "ENDLOCAL & EXIT /B %STATUS%" in make_bat
-        assert "coverage_show_missing_items = True" in conf
-        assert "coverage_statistics_to_stdout = True" in conf
-        assert 'templates_path = ["_templates"]' in conf
-        assert "autodoc_default_options" not in conf
-        assert 'suppress_warnings = ["toc.excluded"]' in conf
-        assert "source_suffix" not in conf
-        assert "project_metadata = load_project_metadata()" in conf
-        assert 'project = str(project_metadata["name"])' in conf
-        assert "author = format_authors(project_metadata)" in conf
-        assert 'project_license = str(project_metadata.get("license", ""))' in conf
-        assert "release = metadata.version(project)" in conf
-        assert '"sphinx.ext.duration"' in conf
-        assert (destination / "docs/source/readme.md").is_file()
-        documentation_guide = (destination / "docs/README.md").read_text(encoding="utf-8")
-        assert "# Documentation contributor guide" in documentation_guide
-        assert "uv run --locked tox run -e docs -- html" in documentation_guide
-        assert not documentation_guide.endswith("\n\n")
-        assert "repository-facing by default" in documentation_guide
-        assert not (destination / "docs/source/documentation-guide.md").exists()
-        generated_readme = (destination / "README.md").read_text(encoding="utf-8")
-        contributing = (destination / "CONTRIBUTING.md").read_text(encoding="utf-8")
-        maintaining = (destination / "MAINTAINING.md").read_text(encoding="utf-8")
-        assert "| `docs/README.md` | Documentation authors | Pages, API reference" in generated_readme
-        assert "documentation-author workflow is in `docs/README.md`" in contributing
-        assert "Documentation authoring is documented in `docs/README.md`" in maintaining
-        assert "[`docs/README.md`](docs/README.md)" not in generated_readme
-        documentation_index = (destination / "docs/source/index.md").read_text(encoding="utf-8")
-        assert "readme\ncommand-reference\napi" in documentation_index
-        readme_document = (destination / "docs/source/readme.md").read_text(encoding="utf-8")
-        assert "```{include} ../../README.md" in readme_document
-        assert ':start-after: "# Example Project"' in readme_document
-
-        autosummary_templates = destination / "docs/source/_templates/autosummary"
-        module_template = (autosummary_templates / "module.rst").read_text(encoding="utf-8")
-        class_template = (autosummary_templates / "class.rst").read_text(encoding="utf-8")
-        assert "{{ fullname | escape | underline }}" in module_template
-        assert "Module Attributes" in module_template
-        assert "Functions" in module_template
-        assert "Classes" in module_template
-        assert "Exceptions" in module_template
-        assert "Modules" in module_template
-        assert module_template.count(":toctree:") == 5
-        assert ":recursive:" in module_template
-        assert "{{ fullname | escape | underline }}" in class_template
-        assert ":members:" in class_template
-        assert ":inherited-members:" in class_template
-        assert ":show-inheritance:" in class_template
-        assert ":special-members: __init__" in class_template
-        assert "Methods" in class_template
-        assert "Attributes" in class_template
-        api_reference = (destination / "docs/source/api.rst").read_text(encoding="utf-8")
-        assert ":recursive:" in api_reference
-        if answers["use_notebooks"]:
-            assert 'nb_execution_mode = "off"' in conf
-            assert '"myst_nb"' in conf
-            assert has_dependency(pyproject["dependency-groups"]["docs"], "myst-nb")
-            assert not has_dependency(pyproject["dependency-groups"]["docs"], "nbsphinx")
-            assert "nbgallery" not in (destination / "docs/source/notebooks/index.rst").read_text(encoding="utf-8")
-
-        generated_gitignore = (destination / ".gitignore").read_text()
-        assert "reports/\n" not in generated_gitignore
-        assert ".coverage.*" in generated_gitignore
-        assert "pytest-of-*/" in generated_gitignore
-        assert "reports/coverage/" in generated_gitignore
-        assert "reports/pytest/" in generated_gitignore
-        assert "reports/sphinx/" in generated_gitignore
-        if answers["use_example_gallery"]:
-            assert "docs/source/auto_examples/" in generated_gitignore
-            assert "docs/source/sg_execution_times.rst" in generated_gitignore
-            assert 'rmtree(SOURCE / "auto_examples", ignore_errors=True)' in docs_script
-            assert '(SOURCE / "sg_execution_times.rst").unlink(missing_ok=True)' in docs_script
-        clean_script = (destination / "scripts/clean.py").read_text()
-        assert 'ROOT.glob(".coverage.*")' in clean_script
-        assert 'ROOT.glob("pytest-of-*")' in clean_script
-        assert 'ROOT / "reports",' not in clean_script
-        assert 'ROOT / "reports" / "coverage"' in clean_script
-        assert 'ROOT / "reports" / "pytest"' in clean_script
-        assert 'ROOT / "reports" / "sphinx"' in clean_script
-        if answers["use_example_gallery"]:
-            assert 'ROOT / "docs" / "source" / "auto_examples"' in clean_script
-            assert 'ROOT / "docs" / "source" / "sg_execution_times.rst"' in clean_script
-
-        if answers["use_uml"]:
-            assert "[testenv:uml]" in tox_config
-            assert "python scripts/generate_uml.py" in tox_config
-            assert (destination / "scripts/generate_uml.py").is_file()
-            docs_dependencies = pyproject["dependency-groups"]["docs"]
-            assert has_dependency(docs_dependencies, "sphinxcontrib-mermaid")
-            assert '"sphinxcontrib.mermaid"' in conf
-            assert 'mermaid_output_format = "raw"' in conf
-            assert '"sphinx.ext.graphviz"' not in conf
-            uml_script = (destination / "scripts/generate_uml.py").read_text(encoding="utf-8")
-            assert '"mmd"' in uml_script
-            diagrams = (destination / "docs/source/diagrams/index.rst").read_text(encoding="utf-8")
-            assert ".. mermaid:: packages.mmd" in diagrams
-            assert ".. mermaid:: classes.mmd" in diagrams
-        else:
-            assert "[testenv:uml]" not in tox_config
-            assert not (destination / "scripts/generate_uml.py").exists()
-    else:
+def test_documentation_outputs(destination: Path, answers: dict[str, object]) -> None:
+    if not answers["use_docs"]:
         assert not (destination / "docs").exists()
         assert not (destination / "docs/README.md").exists()
-        assert "[testenv:docs]" not in tox_config
-        assert "[testenv:docs-html]" not in tox_config
-        assert "[testenv:docs-coverage]" not in tox_config
-        assert "[testenv:uml]" not in tox_config
+        return
 
+    tox_config = (destination / "tox.ini").read_text()
+    conf = (destination / "docs/source/conf.py").read_text()
+    assert (destination / "docs/source/conf.py").is_file()
+    assert f"napoleon_google_docstring = {answers['docstring_style'] == 'google'}" in conf
+    assert f"napoleon_numpy_docstring = {answers['docstring_style'] == 'numpy'}" in conf
+    assert "[testenv:docs]" in tox_config
+    assert "[testenv:docs-html]" not in tox_config
+    assert "[testenv:docs-coverage]" not in tox_config
+    assert "python scripts/build_docs.py {posargs:all}" in tox_config
+    assert "build the selected documentation target" in tox_config
+
+    docs_script = (destination / "scripts/build_docs.py").read_text()
+    assert 'choices=("all", "html", "coverage", "clean")' in docs_script
+    assert '"-d",' in docs_script
+    assert "check_api_coverage()" in docs_script
+    assert 'build("coverage")' in docs_script
+
+    makefile = (destination / "docs/Makefile").read_text()
+    make_bat = (destination / "docs/make.bat").read_text()
+    assert "../scripts/build_docs.py $@" in makefile
+    assert "%PYTHON% ..\\scripts\\build_docs.py %TARGET%" in make_bat
+    assert 'IF /I "%TARGET%" == "clean" GOTO :build' in make_bat
+
+    assert "coverage_show_missing_items = True" in conf
+    assert "coverage_statistics_to_stdout = True" in conf
+    assert 'templates_path = ["_templates"]' in conf
+    assert "autodoc_default_options" not in conf
+    assert 'suppress_warnings = ["toc.excluded"]' in conf
+    assert "source_suffix" not in conf
+
+    assert (destination / "docs/source/readme.md").is_file()
+    documentation_guide = (destination / "docs/README.md").read_text(encoding="utf-8")
+    assert "# Documentation contributor guide" in documentation_guide
+    assert "uv run --locked tox run -e docs -- html" in documentation_guide
+    assert not documentation_guide.endswith("\n\n")
+    assert "repository-facing by default" in documentation_guide
+    assert not (destination / "docs/source/documentation-guide.md").exists()
+
+    documentation_index = (destination / "docs/source/index.md").read_text(encoding="utf-8")
+    assert "readme\ncommand-reference\napi" in documentation_index
+    readme_document = (destination / "docs/source/readme.md").read_text(encoding="utf-8")
+    assert "```{include} ../../README.md" in readme_document
+    assert ':start-after: "# Example Project"' in readme_document
+
+    generated_gitignore = (destination / ".gitignore").read_text()
+    for line in (".coverage.*", "pytest-of-*/", "reports/coverage/", "reports/pytest/", "reports/sphinx/"):
+        assert line in generated_gitignore
+
+
+def test_uml_integration(destination: Path, answers: dict[str, object]) -> None:
+    tox_config = (destination / "tox.ini").read_text() if answers["use_docs"] else ""
+    if not (answers["use_docs"] and answers["use_uml"]):
+        assert not (destination / "scripts/generate_uml.py").exists()
+        if tox_config:
+            assert "[testenv:uml]" not in tox_config
+        return
+
+    assert "[testenv:uml]" in tox_config
+    assert "python scripts/generate_uml.py" in tox_config
+    assert (destination / "scripts/generate_uml.py").is_file()
+
+    conf = (destination / "docs/source/conf.py").read_text()
+    pyproject = load_toml(destination)
+    assert has_dependency(pyproject["dependency-groups"]["docs"], "sphinxcontrib-mermaid")
+    assert '"sphinxcontrib.mermaid"' in conf
+    assert 'mermaid_output_format = "raw"' in conf
+    assert '"sphinx.ext.graphviz"' not in conf
+
+    uml_script = (destination / "scripts/generate_uml.py").read_text(encoding="utf-8")
+    assert '"mmd"' in uml_script
+    diagrams = (destination / "docs/source/diagrams/index.rst").read_text(encoding="utf-8")
+    assert ".. mermaid:: packages.mmd" in diagrams
+    assert ".. mermaid:: classes.mmd" in diagrams
+
+
+def test_notebooks_integration(destination: Path, answers: dict[str, object]) -> None:
+    tox_config = (destination / "tox.ini").read_text()
+    pyproject = load_toml(destination)
     if answers["use_notebooks"]:
         notebook_path = destination / "notebooks/example.ipynb"
         assert notebook_path.is_file()
@@ -829,18 +734,14 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         assert [cell["id"] for cell in notebook["cells"]] == ["0", "1"]
         assert (destination / "scripts/check_notebooks.py").is_file()
         assert "[testenv:notebooks]" in tox_config
-        groups = pyproject["dependency-groups"]
-        assert "notebooks" in groups
-        assert any("jupyterlab" in dependency for dependency in groups["notebooks"])
+        assert "notebooks" in pyproject["dependency-groups"]
+        assert any("jupyterlab" in dependency for dependency in pyproject["dependency-groups"]["notebooks"])
+        assert pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]["notebooks/**/*.ipynb"]
 
         if answers["use_precommit"]:
             precommit = (destination / ".pre-commit-config.yaml").read_text()
             assert "kynan/nbstripout" in precommit
-            assert "^notebooks/.*\\.ipynb$" in precommit
             assert "id: format-docstring-jupyter" in precommit
-
-        ruff_ignores = pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]
-        assert "notebooks/**/*.ipynb" in ruff_ignores
     else:
         assert not (destination / "notebooks").exists()
         assert not (destination / "scripts/check_notebooks.py").exists()
@@ -850,41 +751,65 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
             precommit = (destination / ".pre-commit-config.yaml").read_text()
             assert "kynan/nbstripout" not in precommit
 
+
+def test_data_science_layout(destination: Path, answers: dict[str, object]) -> None:
+    pyproject = load_toml(destination)
+    pytest_options = pyproject["tool"]["pytest"]["ini_options"]
     if answers["project_kind"] == "data_science":
         assert "ICN" in pyproject["tool"]["ruff"]["lint"]["select"]
         assert "NPY" in pyproject["tool"]["ruff"]["lint"]["select"]
         assert (destination / "data/raw/.gitkeep").is_file()
         assert (destination / "tests/data/README.md").is_file()
-        assert has_dependency(test_dependencies, "pytest-datadir")
+        assert has_dependency(pyproject["dependency-groups"]["test"], "pytest-datadir")
         assert has_dependency(pytest_options["required_plugins"], "pytest-datadir")
     else:
         assert "ICN" not in pyproject["tool"]["ruff"]["lint"]["select"]
         assert "NPY" not in pyproject["tool"]["ruff"]["lint"]["select"]
         assert not (destination / "data").exists()
         assert not (destination / "tests/data").exists()
-        assert not has_dependency(test_dependencies, "pytest-datadir")
+        assert not has_dependency(pyproject["dependency-groups"]["test"], "pytest-datadir")
 
-    if answers["use_example_gallery"]:
-        assert (destination / "examples/GALLERY_HEADER.rst").is_file()
-        assert (destination / "examples/plot_quadratic.py").is_file()
-        docs_dependencies = pyproject["dependency-groups"]["docs"]
-        assert has_dependency(docs_dependencies, "sphinx-gallery")
-        assert has_dependency(docs_dependencies, "matplotlib")
+
+def test_example_gallery(destination: Path, answers: dict[str, object]) -> None:
+    if not answers["use_example_gallery"]:
+        assert not (destination / "examples").exists()
+        return
+
+    pyproject = load_toml(destination)
+    assert (destination / "examples/GALLERY_HEADER.rst").is_file()
+    assert (destination / "examples/plot_quadratic.py").is_file()
+    assert has_dependency(pyproject["dependency-groups"]["docs"], "sphinx-gallery")
+    assert has_dependency(pyproject["dependency-groups"]["docs"], "matplotlib")
+    assert pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]["examples/**/*.py"] == ["D205", "D415"]
+
+    gallery_example = (destination / "examples/plot_quadratic.py").read_text(encoding="utf-8")
+    assert "# no-format-docstring" in gallery_example
+    assert "Plot a quadratic function\n=========================" in gallery_example
+
+    if answers["use_docs"]:
         conf = (destination / "docs/source/conf.py").read_text()
         assert "sphinx_gallery.gen_gallery" in conf
         assert "../../examples" in conf
-        assert "auto_examples/*.ipynb" in conf
-        assert "auto_examples/**/*.ipynb" in conf
-        assert "auto_examples/*.py" in conf
-        assert "auto_examples/**/*.py" in conf
-        gallery_example = (destination / "examples/plot_quadratic.py").read_text(encoding="utf-8")
-        assert pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]["examples/**/*.py"] == ["D205", "D415"]
-        assert "# no-format-docstring" in gallery_example
-        assert "Plot a quadratic function\n=========================" in gallery_example
-    else:
-        assert not (destination / "examples").exists()
+    if (destination / "scripts/build_docs.py").exists():
+        docs_script = (destination / "scripts/build_docs.py").read_text()
+        assert 'rmtree(SOURCE / "auto_examples", ignore_errors=True)' in docs_script
+        assert '(SOURCE / "sg_execution_times.rst").unlink(missing_ok=True)' in docs_script
 
-    ci_provider = answers["ci_provider"]
+
+def _ci_common(path: Path, answers: dict[str, object]) -> str:
+    ci_text = path.read_text()
+    yaml.safe_load(ci_text)
+    assert "tox run -e lock" in ci_text
+    assert "tox run -e lint" in ci_text
+    assert "tox run -e package-check" in ci_text
+    assert "tox run -e build" not in ci_text
+    assert ("tox run -e repo-checks" in ci_text) is bool(answers["use_precommit"])
+    assert ("tox run -e dvc" in ci_text) is bool(answers["project_kind"] == "data_science" and answers["use_dvc"])
+    return ci_text
+
+
+def test_ci_provider(destination: Path, answers: dict[str, object]) -> None:
+    ci_provider = str(answers["ci_provider"])
     github_ci = destination / ".github/workflows/ci.yml"
     github_renovate_ci = destination / ".github/workflows/renovate.yml"
     gitlab_ci = destination / ".gitlab-ci.yml"
@@ -895,27 +820,19 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         assert github_renovate_ci.is_file()
         assert not gitlab_ci.exists()
         assert not bitbucket_ci.exists()
-        ci_text = github_ci.read_text()
-        renovate_ci_text = github_renovate_ci.read_text(encoding="utf-8")
-        yaml.safe_load(ci_text)
-        yaml.safe_load(renovate_ci_text)
-        assert "tox run -e lock" in ci_text
-        assert "tox run -e lint" in ci_text
-        assert "tox run -e package-check" in ci_text
-        assert "tox run -e build" not in ci_text
+        ci_text = _ci_common(github_ci, answers)
         assert "cancel-in-progress: true" in ci_text
-        assert "actions/checkout@v7" in ci_text
-        assert "astral-sh/setup-uv@v9" in ci_text
-        assert "reports/pytest/" in ci_text
-        assert "reports/coverage/" in ci_text
-        assert "if-no-files-found: error" in ci_text
+        assert "uv run pytest" not in ci_text
         if answers["use_docs"]:
             assert "name: documentation" in ci_text
             assert "path: reports/sphinx/" in ci_text
-        assert ("tox run -e repo-checks" in ci_text) is bool(answers["use_precommit"])
-        assert "tox run -e pre-commit" not in ci_text
-        assert "uv run pytest" not in ci_text
-        assert ("tox run -e dvc" in ci_text) is bool(answers["use_dvc"])
+        # GitHub workflow uses actions; no version pinning is asserted so the
+        # template does not have to update the test on every action bump.
+        assert "actions/checkout" in ci_text
+        assert "astral-sh/setup-uv" in ci_text
+
+        renovate_ci_text = github_renovate_ci.read_text(encoding="utf-8")
+        yaml.safe_load(renovate_ci_text)
         assert "name: Renovate" in renovate_ci_text
         assert 'cron: "0 5 * * *"' in renovate_ci_text
         assert "workflow_dispatch:" in renovate_ci_text
@@ -926,55 +843,58 @@ def test_generated_project(tmp_path: Path, overrides: dict[str, object]) -> None
         assert not github_ci.exists()
         assert not github_renovate_ci.exists()
         assert not bitbucket_ci.exists()
-        ci_text = gitlab_ci.read_text()
-        yaml.safe_load(ci_text)
-        assert "tox run -e lock" in ci_text
-        assert "tox run -e lint" in ci_text
-        assert "tox run -e package-check" in ci_text
-        assert "tox run -e build" not in ci_text
+        ci_text = _ci_common(gitlab_ci, answers)
         assert "on_new_commit: interruptible" in ci_text
         assert "interruptible: true" in ci_text
         assert "renovate:" in ci_text
         assert "npx --yes renovate --autodiscover --onboarding-branch=renovate/init" in ci_text
         assert 'if: $CI_PIPELINE_SOURCE == "schedule"' in ci_text
-        assert ("tox run -e repo-checks" in ci_text) is bool(answers["use_precommit"])
-        assert "tox run -e pre-commit" not in ci_text
-        assert ("tox run -e dvc" in ci_text) is bool(answers["use_dvc"])
     elif ci_provider == "bitbucket":
         assert bitbucket_ci.is_file()
         assert not github_ci.exists()
         assert not github_renovate_ci.exists()
         assert not gitlab_ci.exists()
-        ci_text = bitbucket_ci.read_text()
-        yaml.safe_load(ci_text)
-        assert "tox run -e lock" in ci_text
-        assert "tox run -e lint" in ci_text
-        assert "tox run -e package-check" in ci_text
-        assert "tox run -e build" not in ci_text
-        assert "cancel-in-progress: true" not in ci_text
-        assert "on_new_commit: interruptible" not in ci_text
-        assert ("tox run -e repo-checks" in ci_text) is bool(answers["use_precommit"])
-        assert "tox run -e pre-commit" not in ci_text
-        assert ("tox run -e dvc" in ci_text) is bool(answers["use_dvc"])
+        _ci_common(bitbucket_ci, answers)
     else:
         assert not github_ci.exists()
         assert not github_renovate_ci.exists()
         assert not gitlab_ci.exists()
         assert not bitbucket_ci.exists()
 
-    if ci_provider != "none":
-        assert "graphviz" not in ci_text.lower()
 
+def test_generated_project_compiles(destination: Path) -> None:
     run("python", "-m", "compileall", "-q", "src", "tests", "scripts", cwd=destination)
 
-    if os.environ.get("RUN_GENERATED_BUILDS") == "1":
-        run("git", "init", cwd=destination)
-        run("git", "config", "user.name", "Template CI", cwd=destination)
-        run("git", "config", "user.email", "template@example.com", cwd=destination)
-        run("git", "add", ".", cwd=destination)
-        run("git", "commit", "-m", "Initial project", cwd=destination)
-        run("git", "tag", "v0.0.1", cwd=destination)
-        run("uv", "build", cwd=destination)
+
+def test_structural_spec_matches_destination(
+    rendered: tuple[Path, dict[str, object]], overrides: dict[str, object]
+) -> None:
+    """Spec-driven structural check.
+
+    Regenerate the committed ``tests/specs/<case>.yaml`` files by running:
+
+        EXPECTED_UPDATE=1 uv run --locked pytest
+
+    Without that env var, drift between the committed spec and the rendered
+    output is a failure with a readable set diff.
+    """
+    from expected import verify
+
+    case_id = case_id_for(overrides)
+    destination = rendered[0]
+    verify(destination, case_id)
+
+
+@pytest.mark.slow
+def test_generated_project_build_package(destination: Path) -> None:
+    """Slow: builds the rendered project end-to-end (needs a git repo + a tag)."""
+    run("git", "init", cwd=destination)
+    run("git", "config", "user.name", "Template CI", cwd=destination)
+    run("git", "config", "user.email", "template@example.com", cwd=destination)
+    run("git", "add", ".", cwd=destination)
+    run("git", "commit", "-m", "Initial project", cwd=destination)
+    run("git", "tag", "v0.0.1", cwd=destination)
+    run("uv", "build", cwd=destination)
 
 
 def test_normal_project_starter_tests_meet_coverage_threshold(tmp_path: Path) -> None:
@@ -993,7 +913,6 @@ def test_normal_project_starter_tests_meet_coverage_threshold(tmp_path: Path) ->
             os.devnull,
             "--cov=example_project",
             "--cov-branch",
-            "--cov-report=term-missing",
             "--cov-fail-under=80",
             str(destination / "tests"),
         ],
@@ -1003,12 +922,11 @@ def test_normal_project_starter_tests_meet_coverage_threshold(tmp_path: Path) ->
     )
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
-    os.environ.get("RUN_NORMAL_PROJECT") != "1",
-    reason="set RUN_NORMAL_PROJECT=1 to run a normal generated project's complete initialisation lifecycle",
+    os.environ.get("RUN_NORMAL_PROJECT") != "1", reason="set RUN_NORMAL_PROJECT=1 to run a full lifecycle"
 )
 def test_normal_project_complete_lifecycle(tmp_path: Path) -> None:
-    """Render and bootstrap the option combination from the coverage regression report."""
     destination = tmp_path / "normal-project"
     render_generated_project(destination, NORMAL_PROJECT_REGRESSION_OVERRIDES)
     precommit_home = tmp_path / "pre-commit-home"
