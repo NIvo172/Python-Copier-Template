@@ -196,6 +196,22 @@ docstring_style:
     NumPy style: numpy
   default: google
 
+mypy_strict:
+  type: bool
+  qmark: ">"
+  help: Run mypy in strict mode for a greenfield, fully-typed codebase
+  default: true
+
+coverage_fail_under:
+  type: int
+  qmark: ">"
+  help: Minimum line-coverage percentage required by the test run
+  default: 80
+  validator: >-
+    {% if coverage_fail_under < 0 or coverage_fail_under > 100 %}
+    Enter a percentage between 0 and 100.
+    {% endif %}
+
 use_docs:
   type: bool
   qmark: ">"

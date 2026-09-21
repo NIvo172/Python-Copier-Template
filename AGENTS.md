@@ -1,7 +1,7 @@
-# SKILLS.md — Developing the python-project-copier-template
+# AGENTS.md — Developing the python-project-copier-template
 
-**Audience:** the people who edit this template repository (copier template developers and maintainers).
-**Not a user guide for generated projects.** For that, see the generated project's `SKILLS.md`, which ships as `template/SKILLS.md.jinja`.
+**Audience:** AI coding agents first; humans welcome — for whoever edits this template repository (template developers and maintainers).
+**Not a user guide for generated projects.** For that, see the generated project's `AGENTS.md`, which ships as `template/AGENTS.md.jinja`.
 
 ## 0. What this repository is
 
@@ -37,6 +37,7 @@ Key invariants (enforced by the test suite):
     ├── pyproject.toml.jinja, tox.ini.jinja, .pre-commit-config.yaml.jinja
     ├── .python-version.jinja, .editorconfig, .gitignore, .vscode/*, renovate.json
     ├── LICENSE.jinja, README.md.jinja, CONTRIBUTING.md.jinja, MAINTAINING.md.jinja
+    ├── AGENTS.md.jinja                # generated project's agent task → command catalog
     ├── CODE_OF_CONDUCT.md.jinja   (only if has_other_contributors)
     ├── src/{{ package_name }}/(__init__.py.jinja, main.py.jinja, py.typed)
     ├── tests/test_main.py.jinja

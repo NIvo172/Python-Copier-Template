@@ -26,6 +26,8 @@ BASE_ANSWERS: dict[str, object] = {
     "python_versions": ["3.11", "3.12", "3.13", "3.14"],
     "project_kind": "library",
     "docstring_style": "google",
+    "mypy_strict": True,
+    "coverage_fail_under": 80,
     "use_docs": True,
     "use_notebooks": False,
     "use_dvc": False,

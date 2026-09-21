@@ -194,7 +194,7 @@ branch = true
 relative_files = true
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = {{ coverage_fail_under }}
 show_missing = true
 skip_covered = true
 
@@ -206,7 +206,7 @@ skip_empty = true
 [tool.mypy]
 python_version = "{{ minimum_python_version }}"
 files = ["src", "tests"]
-strict = true
+strict = {% if mypy_strict %}true{% else %}false{% endif %}
 warn_unreachable = true
 pretty = true
 show_error_codes = true

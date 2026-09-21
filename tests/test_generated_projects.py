@@ -364,6 +364,10 @@ def test_pyproject_tool_configuration(destination: Path, answers: dict[str, obje
     assert pyproject["tool"]["ruff"]["format"]["docstring-code-line-length"] == "dynamic"
     assert "G" in pyproject["tool"]["ruff"]["lint"]["select"]
     assert "LOG" in pyproject["tool"]["ruff"]["lint"]["select"]
+    # Quality gates are answer-driven (mypy_strict, coverage_fail_under) so a
+    # "real project" can opt into a looser stance without editing a managed file.
+    assert pyproject["tool"]["mypy"]["strict"] is bool(answers["mypy_strict"])
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == int(answers["coverage_fail_under"])
 
     pytest_options = pyproject["tool"]["pytest"]["ini_options"]
     assert has_dependency(pytest_options["required_plugins"], "pytest-reportlog")
@@ -681,7 +685,11 @@ def test_documentation_outputs(destination: Path, answers: dict[str, object]) ->
     assert "coverage_statistics_to_stdout = True" in conf
     assert 'templates_path = ["_templates"]' in conf
     assert "autodoc_default_options" not in conf
-    assert 'suppress_warnings = ["toc.excluded"]' in conf
+    # Baseline suppression so a fresh project's README cross-references (readme,
+    # command-reference, ...) don't hard-fail the strict `-W` build before those
+    # pages exist; the coverage builder additionally relaxes the toc.
+    assert '"myst.xref_missing"' in conf
+    assert 'suppress_warnings.append("toc.excluded")' in conf
     assert "source_suffix" not in conf
 
     assert (destination / "docs/source/readme.md").is_file()

@@ -91,9 +91,14 @@ exclude_patterns = [
 ]
 
 documentation_builder = os.environ.get("PROJECT_DOCS_BUILDER")
+
+suppress_warnings = [
+    # MyST cross-references to not-yet-authored pages (readme, command-reference, ...).
+    "myst.xref_missing",
+]
 if documentation_builder == "coverage":
     exclude_patterns.extend(["auto_examples/**", "diagrams/**", "notebooks/**", "sg_execution_times.rst"])
-    suppress_warnings = ["toc.excluded"]
+    suppress_warnings.append("toc.excluded")
 
 html_theme = "furo"
 html_context = {"project_license": project_license}

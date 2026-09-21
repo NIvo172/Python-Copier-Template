@@ -49,6 +49,15 @@ URLs are inserted into `[project.urls]` in `pyproject.toml`. Copier does not tes
 
 Both build backends derive versions from Git. A build from tag `v0.0.1` receives version `0.0.1`; later commits receive a PEP 440 development version derived from repository state.
 
+## Quality gates
+
+| Answer | Default | Effect |
+| --- | --- | --- |
+| `mypy_strict` | True | Sets `strict` under `[tool.mypy]`; a greenfield, fully-typed project keeps strict on, while an existing codebase can answer `false` |
+| `coverage_fail_under` | 80 | Sets `fail_under` under `[tool.coverage.report]` (0–100); the test run fails below this line-coverage percentage |
+
+Both answers exist so a real project can relax the default greenfield gates through its answers rather than editing the rendered `pyproject.toml`, which would otherwise be clobbered by the next `copier update`.
+
 ## Optional capabilities
 
 | Answer | Default and condition | Effect |
