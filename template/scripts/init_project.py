@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["pyyaml>=6"]
 # ///
 
 """Initialise Git, dependencies, generated state, and the initial project version."""
@@ -15,6 +15,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GIT_NAME = "John Doe"
@@ -182,22 +184,9 @@ def has_dvc_stages() -> bool:
     if not dvc_file.is_file():
         return False
 
-    lines = dvc_file.read_text(encoding="utf-8").splitlines()
-    for index, line in enumerate(lines):
-        if line.strip() != "stages:":
-            continue
-        base_indent = len(line) - len(line.lstrip())
-        for candidate in lines[index + 1 :]:
-            stripped = candidate.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            indent = len(candidate) - len(candidate.lstrip())
-            if indent <= base_indent:
-                return False
-            return stripped != "{}"
-        return False
-
-    return "stages: {}" not in dvc_file.read_text(encoding="utf-8")
+    data = yaml.safe_load(dvc_file.read_text(encoding="utf-8"))
+    stages = data.get("stages") if isinstance(data, dict) else None
+    return bool(stages)
 
 
 def require_commands() -> None:

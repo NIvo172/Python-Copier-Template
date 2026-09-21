@@ -15,6 +15,7 @@ dependency_groups:
   - pre-commit
   - pytest
   - ruff
+  - types-PyYAML
   package-check:
   - check-wheel-contents
   - twine

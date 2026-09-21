@@ -152,11 +152,7 @@ python_versions:
   validator: >-
     {% if minimum_python_version not in python_versions %}
     The minimum Python version must be included in the tested versions.
-    {% elif minimum_python_version == "3.12" and "3.11" in python_versions %}
-    Tested versions cannot be lower than the minimum version.
-    {% elif minimum_python_version == "3.13" and ("3.11" in python_versions or "3.12" in python_versions) %}
-    Tested versions cannot be lower than the minimum version.
-    {% elif minimum_python_version == "3.14" and ("3.11" in python_versions or "3.12" in python_versions or "3.13" in python_versions) %}
+    {% elif python_versions|sort|first < minimum_python_version %}
     Tested versions cannot be lower than the minimum version.
     {% endif %}
 
@@ -168,6 +164,18 @@ build_backend:
     Hatchling with hatch-vcs: hatchling
     Setuptools with setuptools-scm: setuptools
   default: hatchling
+
+license:
+  type: str
+  qmark: ">"
+  help: Software licence applied to the project, its code, and its assets
+  choices:
+    MIT: MIT
+    Apache-2.0: Apache-2.0
+    BSD-3-Clause: BSD-3-Clause
+    ISC: ISC
+    Unlicense: Unlicense
+  default: MIT
 
 project_kind:
   type: str
@@ -199,6 +207,7 @@ use_notebooks:
   qmark: ">"
   help: Include Jupyter notebooks and notebook tooling
   default: "{{ project_kind == 'data_science' }}"
+  when: "{{ project_kind == 'data_science' or use_docs }}"
 
 use_dvc:
   type: bool

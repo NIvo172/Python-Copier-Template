@@ -41,6 +41,7 @@ URLs are inserted into `[project.urls]` in `pyproject.toml`. Copier does not tes
 | `minimum_python_version` | 3.11, 3.12, 3.13, or 3.14; default 3.11 | Sets `requires-python`, `.python-version`, Ruff/Mypy targets, and the default Python Tox environment |
 | `python_versions` | One or more versions at or above the minimum | Creates `pyXY` Tox environments, package classifiers, and the CI test matrix |
 | `build_backend` | `hatchling` or `setuptools`; default `hatchling` | Selects Hatchling/hatch-vcs or Setuptools/setuptools-scm |
+| `license` | `MIT`, `Apache-2.0`, `BSD-3-Clause`, `ISC`, or `Unlicense`; default `MIT` | Sets the PEP 639 SPDX licence expression, the generated `LICENSE` text, and the README licence line |
 | `project_kind` | `library`, `application`, or `data_science`; default `library` | Controls the console entry point and data-science layout |
 | `docstring_style` | `google` or `numpy`; default `google` | Configures Ruff pydocstyle and `format-docstring` |
 
@@ -53,7 +54,7 @@ Both build backends derive versions from Git. A build from tag `v0.0.1` receives
 | Answer | Default and condition | Effect |
 | --- | --- | --- |
 | `use_docs` | True | Adds Sphinx, Furo, Autosummary, API coverage, build scripts, and `docs/` |
-| `use_notebooks` | True for data-science projects; false otherwise | Adds exploratory notebooks, JupyterLab, and notebook validation; documentation notebooks require docs too |
+| `use_notebooks` | True for data-science projects; false otherwise; asked only for data-science or when docs are enabled | Adds exploratory notebooks, JupyterLab, and notebook validation; documentation notebooks require docs too |
 | `use_dvc` | False; asked only for data science | Adds `.dvc/`, `.dvcignore`, `dvc.yaml`, dependencies, and a Tox environment |
 | `use_uml` | False; asked only with docs | Adds Pyreverse, Mermaid rendering, diagram sources, and `uml` |
 | `use_example_gallery` | False; asked only with docs | Adds Sphinx-Gallery, Matplotlib, and executable examples |
@@ -108,10 +109,10 @@ They also add `pytest-datadir` and enable NumPy/import-convention Ruff rules. DV
 
 ## Feature interactions
 
-- Notebooks work without Sphinx; documentation notebooks exist only when both features are enabled.
+- Notebooks are included only for data-science projects or when documentation is enabled; documentation notebooks additionally require docs.
 - UML and Sphinx-Gallery require documentation.
 - DVC is available only for data-science projects.
-- The generated licence is MIT and is not currently a Copier question.
+- The generated licence defaults to MIT and is set through the `license` question.
 - Exactly one CI provider file is rendered.
 - `.copier-answers.yml`, `CONTRIBUTING.md`, and `MAINTAINING.md` are always present.
 - `renovate.json` is always present and covers every dependency manager Renovate detects, including weekly lock-file maintenance, but remains inactive until Renovate is enabled on the repository host.

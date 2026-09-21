@@ -1,6 +1,6 @@
 # Documentation
 
-This directory is the complete manual for the Python Project Copier Template. The root `README.md` remains the short repository landing page; [`index.md`](index.md) is the published Sphinx landing page. The guides here explain how to select options, generate and maintain projects, extend the template, and operate every optional feature.
+This directory is the complete manual for the Python Project Copier Template. The root `README.md` stays the short repository landing page; the guides here explain how to select options, generate and maintain projects, extend the template, and operate every optional feature.
 
 ## Choose a reading path
 

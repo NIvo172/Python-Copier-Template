@@ -29,6 +29,8 @@ MYST_INCLUDE = re.compile(r"^```\{include\}\s+(.+?)\s*$", re.MULTILINE)
 SCRIPT_REFERENCE = re.compile(r"\b(scripts/[a-zA-Z0-9_-]+\.py)\b")
 TOCTREE = re.compile(r"```\{toctree\}\s*\n(.*?)```", re.DOTALL)
 TOX_ENVIRONMENT_REFERENCE = re.compile(r"\btox run -e ([a-zA-Z0-9_-]+)\b")
+CI_TOX_ENV_LITERAL = re.compile(r"tox run -e ([a-z0-9-]+)")
+CI_GITHUB_MATRIX_ENV = re.compile(r"tox-env:\s*\"([a-z0-9-]+)\"")
 EXTERNAL_LINK_PREFIXES = ("http://", "https://", "mailto:")
 
 
@@ -108,7 +110,7 @@ def test_post_copy_message_separates_initialisation_and_validation() -> None:
 def test_init_script_has_one_time_terminal_only_contract() -> None:
     script = (TEMPLATE_ROOT / "template/scripts/init_project.py").read_text()
 
-    assert script.startswith('# /// script\n# requires-python = ">=3.11"\n# dependencies = []\n# ///')
+    assert script.startswith('# /// script\n# requires-python = ">=3.11"\n# dependencies = ["pyyaml>=6"]\n# ///')
     assert 'DEFAULT_GIT_NAME = "John Doe"' in script
     assert 'DEFAULT_GIT_EMAIL = "john.doe@example.com"' in script
     assert 'DEFAULT_TAG = "v0.0.1"' in script
@@ -796,15 +798,40 @@ def test_example_gallery(destination: Path, answers: dict[str, object]) -> None:
         assert '(SOURCE / "sg_execution_times.rst").unlink(missing_ok=True)' in docs_script
 
 
+def _extract_ci_tox_environments(ci_text: str) -> set[str]:
+    """Return the Tox environments a rendered CI file invokes, across provider idioms."""
+    environments = set(CI_TOX_ENV_LITERAL.findall(ci_text))
+    # GitHub drives the per-version test envs through a matrix variable rather than a literal name.
+    environments.update(CI_GITHUB_MATRIX_ENV.findall(ci_text))
+    return environments
+
+
+def _expected_ci_tox_environments(answers: dict[str, object]) -> set[str]:
+    """Return the shared CI Tox contract for a feature selection (the set every provider must run)."""
+    environments = {"lock", "lint", "package-check"}
+    if answers["use_precommit"]:
+        environments.add("repo-checks")
+    for python_version in answers["python_versions"]:
+        environments.add("py" + str(python_version).replace(".", ""))
+    if answers["use_notebooks"]:
+        environments.add("notebooks")
+    if answers["project_kind"] == "data_science" and answers["use_dvc"]:
+        environments.add("dvc")
+    if answers["use_docs"]:
+        environments.add("docs")
+    return environments
+
+
 def _ci_common(path: Path, answers: dict[str, object]) -> str:
+    """Assert a rendered CI file runs exactly the shared Tox contract, no more and no less."""
     ci_text = path.read_text()
     yaml.safe_load(ci_text)
-    assert "tox run -e lock" in ci_text
-    assert "tox run -e lint" in ci_text
-    assert "tox run -e package-check" in ci_text
-    assert "tox run -e build" not in ci_text
-    assert ("tox run -e repo-checks" in ci_text) is bool(answers["use_precommit"])
-    assert ("tox run -e dvc" in ci_text) is bool(answers["project_kind"] == "data_science" and answers["use_dvc"])
+    extracted = _extract_ci_tox_environments(ci_text)
+    expected = _expected_ci_tox_environments(answers)
+    assert extracted == expected, (
+        f"{path.name} invokes Tox envs {sorted(extracted)} but the shared CI contract for these "
+        f"features is {sorted(expected)}. The three providers (GitHub, GitLab, Bitbucket) must all run the same set."
+    )
     return ci_text
 
 

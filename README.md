@@ -18,8 +18,8 @@ From a local template checkout:
 uvx copier copy --vcs-ref HEAD . ../my-project
 uv run ../my-project/scripts/init_project.py \
   --git-name "Your Name" \
-  --git-email "you@example.com"
-  --tag       "v0.0.1"
+  --git-email "you@example.com" \
+  --tag "v0.0.1"
 cd ../my-project
 uv run --locked tox
 ```
@@ -30,8 +30,8 @@ From a tagged remote template:
 uvx copier copy --vcs-ref HEAD gh:NIvo172/Python-Copier-Template my-project
 uv run my-project/scripts/init_project.py \
   --git-name "Your Name" \
-  --git-email "you@example.com"
-  --tag       "v0.0.1"
+  --git-email "you@example.com" \
+  --tag "v0.0.1"
 cd my-project
 uv run --locked tox
 ```
@@ -62,7 +62,7 @@ Every project includes:
 - package build and distribution validation
 - provider-neutral dependency updates across every source Renovate detects
 - a concise project README, contributor guide, and maintainer guide
-- an MIT licence
+- an open-source licence (MIT by default)
 - `.copier-answers.yml` for future template updates
 
 Optional capabilities include Sphinx, MyST-NB, Sphinx-Gallery, Pyreverse/Mermaid UML, JupyterLab, data-science directories, DVC, pre-commit, VS Code settings, provider-specific CI, and provider-native collaboration files.
@@ -103,6 +103,7 @@ Generated projects use a parallel audience-based structure:
 | Build backend      | Hatchling/hatch-vcs or Setuptools/setuptools-scm                                                         |
 | Python             | Minimum and tested versions from 3.11 through 3.14                                                       |
 | Docstrings         | Google or NumPy                                                                                          |
+| Licence            | MIT, Apache-2.0, BSD-3-Clause, ISC, or Unlicense (default MIT)                                            |
 | Documentation      | Sphinx/Furo with optional notebooks, gallery, and UML                                                    |
 | Data               | Optional data-science layout and optional DVC                                                            |
 | Repository tooling | Optional pre-commit and VS Code settings                                                                 |
@@ -158,14 +159,14 @@ The tests render combinations covering both build backends, all project kinds, o
 The standard suite already builds rendered distributions as part of its default run. To iterate faster, skip the slower build tier, or run only that tier, with:
 
 ```bash
-uv run pytest -m "not slow"   # structural contracts only
-uv run pytest -m slow         # rendered-project build checks only
+uv run --locked pytest -m "not slow"   # structural contracts only
+uv run --locked pytest -m slow         # rendered-project build checks only
 ```
 
 The full normal-project lifecycle stays opt-in; it bootstraps a real Git repository, runs the generated initialisation script, and then a complete Tox pass:
 
 ```bash
-RUN_NORMAL_PROJECT=1 uv run pytest -m slow -k normal_project_complete_lifecycle
+RUN_NORMAL_PROJECT=1 uv run --locked pytest -m slow -k normal_project_complete_lifecycle
 ```
 
 Exhaustive all-features validation belongs to the companion showcase repository, keeping this template package focused on rendering and update behavior.

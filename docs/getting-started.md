@@ -27,7 +27,7 @@ From the template repository:
 
 ```bash
 uv sync --locked
-uv run pytest
+uv run --locked pytest
 ```
 
 Use `uv sync` without `--locked` only when intentionally refreshing the template's own lock file.

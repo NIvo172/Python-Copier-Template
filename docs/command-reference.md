@@ -21,13 +21,13 @@ The template reference defines the command contract. Generated Sphinx documentat
 | Goal | Command | Effect |
 | --- | --- | --- |
 | Synchronise template and documentation tools | `uv sync --locked --group docs` | Creates/updates `.venv` from the committed template lock without changing it |
-| Run structural contracts | `uv run pytest` | Renders representative Copier configurations and tests migrations/documentation contracts |
-| Lint template Python | `uv run ruff check .` | Reports import, correctness, modernization, and style problems |
-| Check formatting | `uv run ruff format --check .` | Reports Python files that require formatting |
-| Apply formatting | `uv run ruff format .` | Rewrites Python formatting |
-| Skip the slow build tier | `uv run pytest -m "not slow"` | Runs the structural contracts without the rendered-project distribution builds |
-| Run only the build tier | `uv run pytest -m slow` | Renders each case and builds its distributions (the slower checks) |
-| Test a normal project lifecycle | `RUN_NORMAL_PROJECT=1 uv run pytest -m slow -k normal_project_complete_lifecycle` | Renders the normal data-science regression configuration, initialises it, then runs Tox and cleanliness checks |
+| Run structural contracts | `uv run --locked pytest` | Renders representative Copier configurations and tests migrations/documentation contracts |
+| Lint template Python | `uv run --locked ruff check .` | Reports import, correctness, modernization, and style problems |
+| Check formatting | `uv run --locked ruff format --check .` | Reports Python files that require formatting |
+| Apply formatting | `uv run --locked ruff format .` | Rewrites Python formatting |
+| Skip the slow build tier | `uv run --locked pytest -m "not slow"` | Runs the structural contracts without the rendered-project distribution builds |
+| Run only the build tier | `uv run --locked pytest -m slow` | Renders each case and builds its distributions (the slower checks) |
+| Test a normal project lifecycle | `RUN_NORMAL_PROJECT=1 uv run --locked pytest -m slow -k normal_project_complete_lifecycle` | Renders the normal data-science regression configuration, initialises it, then runs Tox and cleanliness checks |
 | Build the template manual | `uv run --locked --group docs sphinx-build -W --keep-going -b html docs reports/sphinx/html` | Builds the complete template Sphinx site and fails on warnings |
 
 ## Generate a project

@@ -23,6 +23,7 @@ dependency_groups:
   - pre-commit
   - pytest
   - ruff
+  - types-PyYAML
   notebooks:
   - ipykernel
   - jupyterlab

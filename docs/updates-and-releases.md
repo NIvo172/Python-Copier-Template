@@ -151,11 +151,10 @@ Before tagging the template itself:
 
 ```bash
 uv sync --locked
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-RUN_GENERATED_BUILDS=1 uv run pytest
-RUN_NORMAL_PROJECT=1 uv run pytest tests/test_generated_projects.py -k normal_project_complete_lifecycle
+uv run --locked pytest
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+RUN_NORMAL_PROJECT=1 uv run --locked pytest tests/test_generated_projects.py -k normal_project_complete_lifecycle
 ```
 
 Verify that:

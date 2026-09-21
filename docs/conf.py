@@ -29,6 +29,7 @@ author = "Template maintainers"
 extensions = [
     "myst_parser",
     "sphinx_copybutton",
+    "sphinxcontrib.mermaid",
 ]
 
 exclude_patterns = [
