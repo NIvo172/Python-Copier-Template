@@ -135,7 +135,7 @@ uv run scripts/init_project.py --git-name "Your Name" --git-email "you@example.c
 
 Order: `git init` (branch `main`) → local identity → initial commit → `uv sync` → `pre-commit run --all-files` (retries while hooks keep fixing files) → second commit only if anything changed → `dvc repro` **only if `dvc.yaml` has stages** → `git tag v0.0.1` → final `uv sync` → verify the worktree is clean.
 
-### 1.10 Updating from the template (later)
+### 1.11 Updating from the template (later)
 
 Change optional capabilities or pull in upstream fixes **without re-copying** (your own
 files — anything not owned by the template — are preserved):
@@ -146,27 +146,15 @@ copier update --defaults --vcs-ref=<commit-or-tag> --data use_uml=false
 
 Gotchas learned the hard way:
 
-- **Copier is not on `PATH`.** Run the copy from a template dev checkout (its `.venv/bin/copier`)
-  or `uvx copier`. It is not a runtime dependency of the project.
 - **`--defaults` is required in a non-interactive shell** (CI, an agent, a piped terminal).
   Without it copier exits: `Warning: Input is not a terminal ... Interactive session required`.
-- **Pass an explicit `--vcs-ref` (a tag or commit), not `:current:`.** In some checkouts
-  `:current:` resolves to the commit already recorded in `.copier-answers.yml` — the run then
-  prints `Keeping template version ...` and changes **nothing** (still exit 0). An explicit ref
-  forces it to move; confirm you see `Updating to template version ...` rather than `Keeping ...`.
 - **Edited template-owned files become merge conflicts.** If you hand-edited a file the
   template also renders (e.g. `pyproject.toml`, `docs/source/conf.py`, `README.md`), copier
   leaves markers instead of guessing:
   `<<<<<<< before updating` … `=======` … `>>>>>>> after updating`. Resolve each (choose which
   side — or merge both), then `git add` the file so it is no longer unmerged.
-- **A new template default can break this project.** Upstream may add a stricter gate
-  (e.g. a new mypy flag) that your existing code violates. **Fix the code, don't re-disable
-  the flag** to get green again.
-- **Rehearse first if the project has diverged a lot.** `cp -a <project> /tmp/copy && cd /tmp/copy`
-  and run the update there; inspect `git status` for conflicts and `convergence` (the answers
-  file advanced, no stale files) **before** touching the real repo.
 
-After an update, run the full validation set (§7) — the template and your local tree must agree.
+After an update, run the full validation set (see `## 7. Maintenance workflows` → `uv run --locked tox`) — the template and your local tree must agree.
 
 ---
 {% if use_docs %}
