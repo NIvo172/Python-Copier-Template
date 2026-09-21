@@ -156,6 +156,27 @@ Gotchas learned the hard way:
 
 After an update, run the full validation set (see `## 7. Maintenance workflows` → `uv run --locked tox`) — the template and your local tree must agree.
 
+### 1.12 Definition of Done — verification sweep
+
+Every change is complete only when **all** of these are green. Run them in order (fast → slow); fix the first failure before continuing — do not batch failures.
+
+| # | Check | Command |
+|---|---|---|
+| 1 | Lint | `uv run --locked --group lint ruff check .` |
+| 2 | Lint (write) | `uv run --locked --group lint ruff format .` |
+| 3 | Docstrings | `uv run --locked --group lint format-docstring src tests scripts` |
+| 4 | Types | `uv run --locked --group lint mypy src tests scripts` |
+| 5 | Tests + test-coverage gate | `uv run --locked pytest` (gate = `fail_under`, `pyproject.toml`) |
+| 6 | **Docs API coverage** + HTML | `uv run --locked tox run -e docs` (UML + Sphinx `coverage` + html) |
+| 7 | Package | `uv run --locked tox run -e package-check` |
+
+- `uv run --locked tox` = the full matrix; **CI runs the same envs** (`.github/workflows/ci.yml`).
+- Two distinct coverage gates — do not conflate:
+  - *test* coverage: `fail_under` (a threshold, currently `80`).
+  - *docs* API coverage: hard pass/fail — **every public symbol must be documented** (checked by `check_api_coverage` in `scripts/build_docs.py`); there is no percentage to tune.
+- Never lower a gate to go green. Changing a gate is a policy change: update `pyproject.toml` **and** `.copier-answers.yml` `coverage_fail_under` together.
+- **`tox run -e lint` on a dirty tree is expected to fail:** its final step is `git diff --exit-code`, so with uncommitted changes it goes red even when every real check (ruff, mypy, format-docstring) passes. Commit first, or expect that last step to fail while the tree is dirty.
+
 ---
 {% if use_docs %}
 
