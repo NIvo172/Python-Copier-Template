@@ -556,9 +556,12 @@ def test_main_module_docstring_style(destination: Path, answers: dict[str, objec
     main_module = (destination / "src/example_project/main.py").read_text()
     if answers["docstring_style"] == "google":
         assert "    Args:" in main_module
+        assert '    """Return a greeting.' in main_module
         assert "    Parameters\n    ----------" not in main_module
     else:
         assert "    Parameters\n    ----------" in main_module
+        assert '    """\n    Return a greeting.' in main_module
+        assert '    """Return a greeting.' not in main_module
         assert "    Args:" not in main_module
 
 
@@ -782,7 +785,7 @@ def test_example_gallery(destination: Path, answers: dict[str, object]) -> None:
     assert (destination / "examples/plot_quadratic.py").is_file()
     assert has_dependency(pyproject["dependency-groups"]["docs"], "sphinx-gallery")
     assert has_dependency(pyproject["dependency-groups"]["docs"], "matplotlib")
-    assert pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]["examples/**/*.py"] == ["D205", "D415"]
+    assert pyproject["tool"]["ruff"]["lint"]["per-file-ignores"]["examples/**/*.py"] == ["D205", "D400", "D415"]
 
     gallery_example = (destination / "examples/plot_quadratic.py").read_text(encoding="utf-8")
     assert "# no-format-docstring" in gallery_example

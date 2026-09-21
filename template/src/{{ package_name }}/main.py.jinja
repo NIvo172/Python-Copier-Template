@@ -2,14 +2,16 @@
 
 
 def hello(name: str = "World") -> str:
-    """Return a greeting.
-{% if docstring_style == "google" %}
+    """{% if docstring_style == "google" %}Return a greeting.
+
     Args:
         name: Name to greet.
 
     Returns:
         A greeting string.
-{% else %}
+    """{% else %}
+    Return a greeting.
+
     Parameters
     ----------
     name : str, default="World"
@@ -19,7 +21,7 @@ def hello(name: str = "World") -> str:
     -------
     str
         A greeting string.
-{% endif %}    """
+    """{% endif %}
     return f"Hello, {name}!"
 
 
