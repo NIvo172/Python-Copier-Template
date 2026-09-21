@@ -118,11 +118,18 @@ Use this matrix as the test harness for new features: a feature that should be p
 - Generated projects commit their original answers in `.copier-answers.yml` (via `template/{{ _copier_conf.answers_file }}.jinja`).
 - A project can later change any copier question with:
   ```
-  copier update --vcs-ref=:current: --data <flag>=<value> ...
+  copier update --defaults --vcs-ref=<commit-or-tag> --data <flag>=<value> ...
   ```
   The user's own files (files not in `template/`) are preserved; copier only re-renders its own files.
 - **Migrations** (`_migrations` in `copier.yml`) run versioned, `unsafe=True` transforms. The suite includes `test_copier_update_runs_versioned_migration_and_preserves_project_files`.
 - The template repo **must be a valid git repository** with refs when `update` is run against it — `copier update` needs a `_commit` to clone from.
+- **`--defaults` is mandatory in non-interactive shells** (CI, agents, piped terminals) — otherwise copier exits with `Interactive session required` and nothing happens.
+- **`--vcs-ref=:current:` can be a silent no-op (exit 0, `Keeping template version ...`).** It may resolve to the `_commit` already recorded in the project's `.copier-answers.yml`. Always pass an explicit SHA/tag and confirm the output says `Updating to template version ...`.
+- **Edited template-owned files become 3-way merge conflicts**, not replacements: copier inserts `<<<<<<< before updating` / `=======` / `>>>>>>> after updating` markers into the generated file and leaves it unmerged in the project's git index. The project owner must resolve each hunk and `git add` — the update is not "done" until the project's worktree is clean.
+- **Rehearse on a copy before touching a real project** that has diverged: `cp -a <project> /tmp/probe` then update there; verify the answers file advanced, `AGENTS.md`/other catalog files re-rendered, and no stray stale files remain. Only then run against the real repo.
+- **New template defaults are a breaking change for generated projects.** Example: adding `warn_unreachable = true` to `pyproject.toml.jinja` will surface unreachable-code errors in every project that already has such code. The contract is: **projects fix their code, they do not re-disable the flag.** Run the project's `mypy`/`tox` after updating to confirm.
+- **Keep `template/AGENTS.md.jinja` in lock-step with any workflow change here.** It is the agent-facing version of this guide; if a procedure changes (like the `copier update` steps above), update both or they drift.
+
 
 ## 7. Validation checklist (run before committing)
 
