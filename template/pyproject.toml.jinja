@@ -205,7 +205,7 @@ skip_empty = true
 
 [tool.mypy]
 python_version = "{{ minimum_python_version }}"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 strict = {% if mypy_strict %}true{% else %}false{% endif %}
 warn_unreachable = true
 pretty = true
