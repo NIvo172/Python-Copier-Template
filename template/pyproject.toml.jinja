@@ -211,6 +211,19 @@ warn_unreachable = true
 pretty = true
 show_error_codes = true
 show_error_code_links = true
+{%- if mypy_strict and not mypy_strict_tests %}
+
+# Strict stays on for src/ + scripts/. Test fixtures and doubles are commonly
+# declared unannotated or partially annotated. `strict` requires one annotation
+# per def, so we relax only the "every def must be annotated" family for the
+# tests package — bare generics, Any-typed locals, and subclass checks are
+# still enforced, so the override is small and auditable.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+{%- endif %}
 
 [tool.format_docstring]
 line_length = 121

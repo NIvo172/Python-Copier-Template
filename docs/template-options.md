@@ -54,6 +54,7 @@ Both build backends derive versions from Git. A build from tag `v0.0.1` receives
 | Answer | Default | Effect |
 | --- | --- | --- |
 | `mypy_strict` | True | Sets `strict` under `[tool.mypy]`; a greenfield, fully-typed project keeps strict on, while an existing codebase can answer `false` |
+| `mypy_strict_tests` | False; has no effect when `mypy_strict` is false | When false, renders a `[[tool.mypy.overrides]]` block for the `tests.*` package that relaxes the "must annotate every def" family (`disallow_untyped_defs`/`disallow_untyped_calls`/`disallow_incomplete_defs`), since test fixtures and doubles are commonly unannotated. When true, `strict` applies to the tests too |
 | `coverage_fail_under` | 80 | Sets `fail_under` under `[tool.coverage.report]` (0–100); the test run fails below this line-coverage percentage |
 
 Both answers exist so a real project can relax the default greenfield gates through its answers rather than editing the rendered `pyproject.toml`, which would otherwise be clobbered by the next `copier update`.

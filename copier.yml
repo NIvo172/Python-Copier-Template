@@ -199,8 +199,23 @@ docstring_style:
 mypy_strict:
   type: bool
   qmark: ">"
-  help: Run mypy in strict mode for a greenfield, fully-typed codebase
+  help: Run mypy in strict mode for src/ + scripts/ (the default). See mypy_strict_tests for the tests/ relaxation.
   default: true
+
+mypy_strict_tests:
+  type: bool
+  qmark: ">"
+  help: >-
+    Also apply full mypy strict to tests/. When off (default), a
+    [[tool.mypy.overrides]] block for tests.* is rendered that relaxes
+    disallow_untyped_defs, disallow_untyped_calls and disallow_incomplete_defs
+    (test fixtures and doubles are commonly unannotated). Every other strict
+    flag still applies to tests/.
+  default: false
+  validator: >-
+    {% if mypy_strict_tests and not mypy_strict %}
+    Note: mypy_strict_tests has no effect when mypy_strict is false.
+    {% endif %}
 
 coverage_fail_under:
   type: int

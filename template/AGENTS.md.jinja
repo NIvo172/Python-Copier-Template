@@ -172,7 +172,7 @@ Every change is complete only when **all** of these are green. Run them in order
 
 - `uv run --locked tox` = the full matrix; **CI runs the same envs** (`.github/workflows/ci.yml`).
 - Two distinct coverage gates — do not conflate:
-  - *test* coverage: `fail_under` (a threshold, currently `80`).
+  - *test* coverage: `fail_under` (a threshold, currently `{{ coverage_fail_under }}`).
   - *docs* API coverage: hard pass/fail — **every public symbol must be documented** (checked by `check_api_coverage` in `scripts/build_docs.py`); there is no percentage to tune.
 - Never lower a gate to go green. Changing a gate is a policy change: update `pyproject.toml` **and** `.copier-answers.yml` `coverage_fail_under` together.
 - **`tox run -e lint` on a dirty tree is expected to fail:** its final step is `git diff --exit-code`, so with uncommitted changes it goes red even when every real check (ruff, mypy, format-docstring) passes. Commit first, or expect that last step to fail while the tree is dirty.
