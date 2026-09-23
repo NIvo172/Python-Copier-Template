@@ -59,6 +59,8 @@ Named groups (in `pyproject.toml [dependency-groups]`): test, lint, package-chec
 
 Not every env is present — see the section that applies below. Run the **default** set with `uv run --locked tox`, or a slice by label: `tox run -m test` / `-m check` / `-m docs` / `-m package` / `-m notebooks` / `-m data` / `-m maintenance`.
 
+> **`uv` vs `uvx` for Tox.** `uv run --locked tox` is the dev-loop default (`tox` is a `dev`-group tool, so the venv must be synced first). For a one-shot or clean checkout — what CI does, e.g. `.github/workflows/docs-pages.yml` — use the uvx form, which assembles the tool on demand: `uvx --with tox-uv tox run -e <env>` (as in `uvx --with tox-uv tox run -e docs`).
+
 ### 1.4 Tests (pytest)
 
 | Task | Command |
